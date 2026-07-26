@@ -6,6 +6,7 @@ const path = require('path');
 const multer = require('multer');
 const webpush = require('web-push');
 const QRCode = require('qrcode');
+const { PNG } = require('pngjs');
 const { q, init } = require('./db');
 const { runImport } = require('./importer');
 
@@ -173,6 +174,18 @@ app.get('/fires/wms', async (req, res) => {
         { signal: AbortSignal.timeout(25000) }); // GIBS peut être très lent ; l'échec est mis en cache 2 min
       if (r.ok && (r.headers.get('content-type') || '').includes('image')) buf = Buffer.from(await r.arrayBuffer());
     } catch {}
+    // Ne garder que les pixels de feu (rouge net) : GIBS peint aussi en bleu la
+    // fauchée / les zones « pas encore ingérées » du jour en cours → carrés bleus
+    if (buf) {
+      try {
+        const png = PNG.sync.read(buf);
+        const d = png.data;
+        for (let i = 0; i < d.length; i += 4) {
+          if (!(d[i] > d[i + 1] + 60 && d[i] > d[i + 2] + 60)) d[i + 3] = 0;
+        }
+        buf = PNG.sync.write(png);
+      } catch {} // format inattendu → on sert tel quel
+    }
     fireTiles.set(key, buf ? { buf, at: Date.now() } : { buf: EMPTY_PNG, at: Date.now(), fail: true });
     if (!buf) return res.end(EMPTY_PNG);
     if (fireTiles.size > 300) fireTiles.delete(fireTiles.keys().next().value); // LRU grossier, ~15 Mo max
