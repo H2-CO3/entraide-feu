@@ -37,9 +37,30 @@ const TYPES = { besoin: ['humain', 'materiel', 'medical'], offre: ['collecte', '
 const ALL_TYPES = [...TYPES.besoin, ...TYPES.offre];
 const TYPE_LABEL = { humain: '🙋 Bras / véhicule', materiel: '📦 Matériel', medical: '⚕️ Médical', collecte: '📥 Point de collecte', refuge: '🏠 Refuge' };
 
+// ---------- journalisation des erreurs ----------
+const LOG_DIR = path.join(__dirname, 'logs');
+fs.mkdirSync(LOG_DIR, { recursive: true });
+function logErr(context, err) {
+  const line = `[${new Date().toISOString()}] ${context} — ${err?.stack || err}\n`;
+  console.error(line.trim());
+  try { fs.appendFileSync(path.join(LOG_DIR, 'error.log'), line); } catch {}
+}
+process.on('unhandledRejection', e => logErr('unhandledRejection', e));
+process.on('uncaughtException', e => { logErr('uncaughtException (arrêt)', e); process.exit(1); });
+
 const app = express();
 app.set('trust proxy', 1);
 app.use(express.json({ limit: '100kb' }));
+
+// Toute route async qui rejette part dans le middleware d'erreur au lieu de
+// tuer le process (les middlewares à 3 arguments ne sont pas touchés)
+for (const m of ['get', 'post']) {
+  const orig = app[m].bind(app);
+  app[m] = (route, ...handlers) => orig(route, ...handlers.map(f =>
+    typeof f === 'function' && f.length < 3
+      ? (req, res, next) => Promise.resolve(f(req, res)).catch(next)
+      : f));
+}
 
 // ---------- identité cookie ----------
 app.use((req, res, next) => {
@@ -435,6 +456,14 @@ app.use('/vendor/leaflet', express.static(path.join(__dirname, 'node_modules', '
 app.use('/vendor/markercluster', express.static(path.join(__dirname, 'node_modules', 'leaflet.markercluster', 'dist'), { maxAge: '30d' }));
 app.use(express.static(path.join(__dirname, 'public'), { maxAge: '5m' }));
 
+// ---------- gestion d'erreurs (toujours en dernier) ----------
+app.use((err, req, res, next) => {
+  if (err instanceof multer.MulterError)
+    return res.status(400).json({ error: 'Fichier trop volumineux (1,5 Mo max) ou invalide.' });
+  logErr(`${req.method} ${req.originalUrl}`, err);
+  if (!res.headersSent) res.status(500).json({ error: 'Erreur serveur — réessayez.' });
+});
+
 // ---------- nettoyage : TTL 24 h public, purge définitive à 72 h ----------
 async function purgePing(id) {
   await q('DELETE FROM ping_updates WHERE ping_id=?', [id]);
@@ -449,7 +478,7 @@ async function cleanup() {
     for (const p of old) { deleteFiles(p); await purgePing(p.id); }
     await q(`DELETE FROM contact_requests WHERE created_at <= NOW() - INTERVAL ${TTL_H} HOUR`);
     await q(`DELETE FROM watchers WHERE updated_at <= NOW() - INTERVAL 30 DAY`);
-  } catch (e) { console.error('cleanup:', e.message); }
+  } catch (e) { logErr('cleanup', e); }
 }
 
 // ---------- démarrage ----------
