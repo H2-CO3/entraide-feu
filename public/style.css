@@ -17,10 +17,10 @@ a { color: #7ab8ff; }
 .leaflet-container { font: inherit; }
 
 /* ---- topbar ---- */
-#topbar { padding: .5rem .75rem .45rem; background: #1a1d24; z-index: 500; }
+#topbar { padding: .6rem .8rem .55rem; background: #1a1d24; z-index: 500; }
 #topbar .row1 { display: flex; justify-content: space-between; align-items: center; gap: .5rem; }
-.logo { font-weight: 800; font-size: 1.1rem; }
-#statsline { margin-top: .2rem; }
+.logo { font-weight: 800; font-size: 1.15rem; }
+.profile-btn { font-size: 1.05rem; padding: .45rem .8rem; }
 #topbar .chips {
   margin: .45rem 0 0; flex-wrap: nowrap; overflow-x: auto;
   scrollbar-width: none; -webkit-overflow-scrolling: touch;
@@ -32,7 +32,7 @@ a { color: #7ab8ff; }
 .chips { display: flex; gap: .4rem; flex-wrap: wrap; margin: .45rem 0; }
 .chip {
   border: 1px solid #3a4152; background: #232838; color: #cdd3de;
-  border-radius: 999px; padding: .35rem .75rem; font-size: .85rem; cursor: pointer;
+  border-radius: 999px; padding: .45rem .85rem; font-size: .88rem; cursor: pointer;
 }
 .chip.on { background: #2f6fed; border-color: #2f6fed; color: #fff; font-weight: 600; }
 
@@ -52,8 +52,9 @@ a { color: #7ab8ff; }
 .row .btn { flex: 1; }
 
 #mainBtns {
-  position: absolute; bottom: 3.4rem; left: .75rem; right: .75rem; z-index: 600;
-  display: flex; gap: .6rem;
+  position: absolute; bottom: calc(env(safe-area-inset-bottom, 0px) + .9rem);
+  left: .8rem; right: .8rem; z-index: 600;
+  display: flex; gap: .7rem;
 }
 #mainBtns .btn { margin: 0; box-shadow: 0 4px 16px rgba(0,0,0,.45); }
 
@@ -63,8 +64,8 @@ a { color: #7ab8ff; }
   display: flex; align-items: center; justify-content: center; padding: 1rem; overflow-y: auto;
 }
 .modal, .ob-card {
-  background: #232838; border-radius: 16px; padding: 1.2rem; width: 100%; max-width: 440px;
-  max-height: 92vh; overflow-y: auto;
+  background: #232838; border-radius: 18px; padding: 1.35rem; width: 100%; max-width: 440px;
+  max-height: 92vh; overflow-y: auto; line-height: 1.45;
 }
 /* onboarding : étapes plein écran, une idée à la fois */
 .ob-full { padding: 0; background: #1a1d24; }
@@ -96,8 +97,9 @@ input[type=text], input[type=tel], textarea {
 /* ---- bottom sheet ---- */
 .sheet {
   position: fixed; left: 0; right: 0; bottom: 0; z-index: 900;
-  background: #232838; border-radius: 18px 18px 0 0; max-height: 72vh; overflow-y: auto;
-  padding: .5rem 1rem 1.2rem; box-shadow: 0 -6px 24px rgba(0,0,0,.5);
+  background: #232838; border-radius: 20px 20px 0 0; max-height: 74vh; overflow-y: auto;
+  padding: .5rem 1.1rem calc(env(safe-area-inset-bottom, 0px) + 1.3rem);
+  box-shadow: 0 -6px 24px rgba(0,0,0,.5);
 }
 .sheet-handle { text-align: right; color: #9aa3b2; cursor: pointer; padding: .3rem; font-size: 1.1rem; position: sticky; top: 0; }
 .sheet h3 { margin: .2rem 0 .4rem; }
@@ -116,7 +118,7 @@ input[type=text], input[type=tel], textarea {
 
 /* ---- bannières ---- */
 .banner {
-  position: absolute; top: 6.4rem; left: .75rem; right: .75rem; z-index: 700;
+  position: absolute; top: 5.6rem; left: .8rem; right: .8rem; z-index: 700;
   background: #294a6e; border-radius: 12px; padding: .7rem .9rem; font-size: .92rem;
   box-shadow: 0 4px 16px rgba(0,0,0,.4);
 }
@@ -124,16 +126,30 @@ input[type=text], input[type=tel], textarea {
 
 /* ---- placement pin ---- */
 #placeBar {
-  position: absolute; bottom: 3.4rem; left: .75rem; right: .75rem; z-index: 800;
-  background: #232838; border-radius: 12px; padding: .8rem; box-shadow: 0 4px 16px rgba(0,0,0,.5);
+  position: absolute; bottom: calc(env(safe-area-inset-bottom, 0px) + .9rem);
+  left: .8rem; right: .8rem; z-index: 800;
+  background: #232838; border-radius: 14px; padding: .9rem; box-shadow: 0 4px 16px rgba(0,0,0,.5);
 }
 
-/* ---- footer ---- */
-#footer {
-  display: flex; justify-content: space-between; align-items: center; padding: .65rem .8rem;
-  font-size: .95rem; background: #14161c; z-index: 500; flex-wrap: wrap; gap: .4rem;
+/* ---- page « Mon espace » ---- */
+.ob-card.page {
+  justify-content: flex-start; text-align: left; max-width: 480px; margin: 0 auto;
+  padding: 1.1rem 1.3rem calc(env(safe-area-inset-bottom, 0px) + 1.5rem);
 }
-#footer a { font-weight: 600; }
+.page-head { display: flex; justify-content: space-between; align-items: center; margin-bottom: .4rem; }
+.page-close {
+  background: #2a3040; border: 0; color: #cdd3de; border-radius: 999px;
+  width: 2.4rem; height: 2.4rem; font-size: 1rem; cursor: pointer;
+}
+.prow {
+  display: flex; justify-content: space-between; align-items: center; width: 100%;
+  background: #232838; border: 1px solid #2c3344; color: #eef0f4; text-decoration: none;
+  border-radius: 12px; padding: .9rem 1rem; margin: .35rem 0; font-size: .98rem;
+  font-family: inherit; cursor: pointer; text-align: left;
+}
+.prow:active { background: #2a3040; }
+.prow .chev { color: #5a6478; font-size: 1.2rem; }
+.sep { height: 1px; background: #2c3344; margin: 1.1rem 0; }
 
 /* attribution Leaflet : minuscule et translucide, hors des boutons */
 .leaflet-control-attribution {

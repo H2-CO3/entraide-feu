@@ -109,7 +109,8 @@ function render() {
   if (!state) return;
   // stats
   const s = state.stats;
-  $('#statsline').textContent = `${s.besoins} besoins · ${s.collectes} collectes · ${s.refuges} refuges · 🔔 ${s.alerte} en alerte · ✅ ${s.resolved} résolus`;
+  const statsTxt = `${s.besoins} besoins · ${s.collectes} collectes · ${s.refuges} refuges · 🔔 ${s.alerte} en alerte · ✅ ${s.resolved} résolus`;
+  document.querySelectorAll('.statsline').forEach(el => el.textContent = statsTxt);
   const fd = $('#fireDate'); if (fd && state.fireDate) fd.textContent = state.fireDate;
 
   // marqueurs
@@ -645,6 +646,7 @@ function setupProfile() {
     } catch (e) { toast(e.message, true); }
   };
   $('#pfHelp').onclick = () => { $('#profileModal').classList.add('hidden'); $('#btnHelp').click(); };
+  $('#pfInfo').onclick = () => { $('#profileModal').classList.add('hidden'); $('#infoModal').classList.remove('hidden'); };
   $('#pfReplay').onclick = () => {
     $('#profileModal').classList.add('hidden');
     obGoto(1);
@@ -686,7 +688,6 @@ function setupUI() {
   });
   $('#fireToggle').onclick = () => setFireLayer(!fireOn);
   $('#infoBtn').onclick = () => $('#infoModal').classList.remove('hidden');
-  $('#footInfo').onclick = e => { e.preventDefault(); $('#infoModal').classList.remove('hidden'); };
   $('#infoClose').onclick = () => $('#infoModal').classList.add('hidden');
   $('#sheetClose').onclick = closeSheet;
   $('#placeCancel').onclick = stopPlacing;

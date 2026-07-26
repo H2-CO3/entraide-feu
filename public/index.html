@@ -77,9 +77,8 @@
 <header id="topbar">
   <div class="row1">
     <span class="logo">🔥 Entraide Feu</span>
-    <button class="chip" id="btnProfile" title="Mon profil">👤 Profil</button>
+    <button class="chip profile-btn" id="btnProfile" title="Mon espace">👤</button>
   </div>
-  <div id="statsline" class="muted small"></div>
   <div class="chips" id="filters">
     <button class="chip on" data-f="all">Tout</button>
     <button class="chip" data-f="besoin">🆘 Besoins</button>
@@ -190,6 +189,7 @@
 <div id="infoModal" class="overlay hidden">
   <div class="modal">
     <h2>ℹ️ Légende</h2>
+    <p class="statsline muted small"></p>
     <ul class="legend">
       <li>🙋 📦 ⚕️ — <b>Besoins</b> émis par les habitants et les équipes sur place</li>
       <li>📥 🏠 — <b>Assistance</b> : refuges citoyens (places, animaux), collectes</li>
@@ -218,31 +218,36 @@
   </div>
 </div>
 
-<!-- ============ PROFIL ============ -->
-<div id="profileModal" class="overlay hidden">
-  <div class="modal">
-    <h2>👤 Mon profil</h2>
-    <p class="small muted">Visible sur vos fiches et vos «&nbsp;j'arrive&nbsp;». Identité rattachée à ce navigateur uniquement.</p>
+<!-- ============ MON ESPACE (page plein écran) ============ -->
+<div id="profileModal" class="overlay ob-full hidden">
+  <div class="ob-card page">
+    <div class="page-head">
+      <h2>👤 Mon espace</h2>
+      <button class="page-close" id="pfCancel">✕</button>
+    </div>
+
+    <p class="small muted">Identité liée à ce navigateur — visible sur vos fiches et vos «&nbsp;j'arrive&nbsp;».</p>
     <input id="pfName" type="text" maxlength="40" placeholder="Prénom ou pseudo" autocomplete="given-name">
     <div class="chips" id="pfProf">
       <button class="chip" data-v="pompier">🚒 Pompier</button>
-      <button class="chip" data-v="policier">👮 Policier / gendarme</button>
+      <button class="chip" data-v="policier">👮 Policier</button>
       <button class="chip" data-v="soignant">⚕️ Soignant</button>
     </div>
-    <p class="small muted">Déclaration sur l'honneur — le badge affiché sera «&nbsp;se déclare…&nbsp;».</p>
-    <div class="row">
-      <button class="btn ghost" id="pfCancel">Fermer</button>
-      <button class="btn" id="pfSave">Enregistrer</button>
-    </div>
-    <button class="btn ghost" id="pfHelp">💪 Mes préférences d'assistance</button>
-    <button class="linklike" id="pfReplay">Revoir l'écran d'introduction</button>
+    <button class="btn" id="pfSave">Enregistrer</button>
+
+    <div class="sep"></div>
+    <button class="prow" id="pfHelp"><span>💪 Mes alertes de dépannage</span><span class="chev">›</span></button>
+    <button class="prow" id="pfInfo"><span>ℹ️ Légende &amp; renseignements officiels</span><span class="chev">›</span></button>
+    <a class="prow" href="/affiche.html" target="_blank"><span>🖨️ Affiche &amp; QR code à imprimer</span><span class="chev">›</span></a>
+    <a class="prow" href="/legal.html" target="_blank"><span>📄 Mentions légales &amp; données</span><span class="chev">›</span></a>
+    <button class="prow" id="pfReplay"><span>🔄 Revoir l'introduction</span><span class="chev">›</span></button>
+
+    <div class="sep"></div>
+    <p class="statsline muted small"></p>
+    <p class="small">🚨 Urgence vitale : <a href="tel:18"><b>18</b></a> · <a href="tel:112"><b>112</b></a>
+    &nbsp;·&nbsp; Info sinistrés : <a href="tel:0970809040">09&nbsp;70&nbsp;80&nbsp;90&nbsp;40</a></p>
   </div>
 </div>
-
-<footer id="footer">
-  <span>Urgence vitale : <a href="tel:18">📞 18</a> · <a href="tel:112">112</a></span>
-  <span><a href="#" id="footInfo">ℹ️ Infos</a> · <a href="/affiche.html" target="_blank">Affiche QR</a> · <a href="/legal.html" target="_blank">Mentions</a></span>
-</footer>
 
 <div id="toasts"></div>
 
