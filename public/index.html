@@ -64,6 +64,7 @@
     <button class="chip" data-f="besoin">🆘 Besoins</button>
     <button class="chip" data-f="offre">🛟 Assistance</button>
     <button class="chip on" id="fireToggle" title="Points chauds satellites NASA">🛰️ Feux</button>
+    <button class="chip" id="infoBtn" title="Légende et renseignements officiels">ℹ️ Infos</button>
   </div>
 </header>
 
@@ -161,6 +162,37 @@
   </div>
 </div>
 
+<!-- ============ INFOS / LÉGENDE ============ -->
+<div id="infoModal" class="overlay hidden">
+  <div class="modal">
+    <h2>ℹ️ Légende</h2>
+    <ul class="legend">
+      <li>🙋 📦 ⚕️ — <b>Besoins</b> émis par les habitants et les équipes sur place</li>
+      <li>📥 🏠 — <b>Assistance</b> citoyenne : points de collecte, refuges</li>
+      <li><span class="offpin-mini">🏠</span> — <b>Point officiel</b> (préfecture, mairie) : hébergement, collecte, animaux</li>
+      <li><span class="halo-mini"></span> — Dépanneur «&nbsp;sur le qui-vive&nbsp;» (position floutée à ~500 m)</li>
+      <li><span class="fire-mini"></span> — Détections satellites NASA (latence de plusieurs heures — indicatif)</li>
+      <li><span class="zone-mini"></span> — Zone de danger / évacuée</li>
+      <li><span class="cluster-mini">5</span> — Plusieurs fiches regroupées : zoomez ou touchez</li>
+    </ul>
+    <h2>📡 Renseignements officiels</h2>
+    <p class="small">
+      Info sinistrés : <a href="tel:0970809040">09 70 80 90 40</a> · Bordeaux Métropole : <a href="tel:0800006090">0 800 00 60 90</a> · Mairie de Biscarrosse : <a href="tel:0558834040">05 58 83 40 40</a>
+    </p>
+    <p class="small">
+      <a href="https://alertesfeux.fr" target="_blank" rel="noopener">alertesfeux.fr</a> — point de situation citoyen (source de nos points officiels) ·
+      <a href="https://alertesfeux.fr/solidarite" target="_blank" rel="noopener">entraide</a> ·
+      <a href="https://alertesfeux.fr/animaux" target="_blank" rel="noopener">animaux</a><br>
+      <a href="https://www.gironde.gouv.fr" target="_blank" rel="noopener">Préfecture de la Gironde</a> ·
+      <a href="https://www.landes.gouv.fr" target="_blank" rel="noopener">Préfecture des Landes</a> ·
+      <a href="https://feuxdeforet.fr" target="_blank" rel="noopener">feuxdeforet.fr</a> ·
+      <a href="https://vigilance.meteofrance.fr" target="_blank" rel="noopener">Vigilance Météo-France</a>
+    </p>
+    <p class="small muted">Les consignes officielles (préfecture, FR-Alert) priment toujours sur cette carte.</p>
+    <button class="btn ghost" id="infoClose">Fermer</button>
+  </div>
+</div>
+
 <!-- ============ PROFIL ============ -->
 <div id="profileModal" class="overlay hidden">
   <div class="modal">
@@ -183,7 +215,7 @@
 
 <footer id="footer">
   <span>Urgence vitale : <a href="tel:18">📞 18</a> · <a href="tel:112">112</a></span>
-  <span><a href="/affiche.html" target="_blank">Affiche QR</a> · <a href="/legal.html" target="_blank">Mentions</a></span>
+  <span><a href="#" id="footInfo">ℹ️ Infos</a> · <a href="/affiche.html" target="_blank">Affiche QR</a> · <a href="/legal.html" target="_blank">Mentions</a></span>
 </footer>
 
 <div id="toasts"></div>

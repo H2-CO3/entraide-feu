@@ -594,6 +594,9 @@ function setupUI() {
     ch.classList.add('on'); filter = ch.dataset.f; render();
   });
   $('#fireToggle').onclick = () => setFireLayer(!fireOn);
+  $('#infoBtn').onclick = () => $('#infoModal').classList.remove('hidden');
+  $('#footInfo').onclick = e => { e.preventDefault(); $('#infoModal').classList.remove('hidden'); };
+  $('#infoClose').onclick = () => $('#infoModal').classList.add('hidden');
   $('#sheetClose').onclick = closeSheet;
   $('#placeCancel').onclick = stopPlacing;
   $('#placeOk').onclick = submitPing;
