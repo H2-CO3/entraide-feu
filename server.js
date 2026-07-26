@@ -96,7 +96,7 @@ async function pushTo(hash, payload) {
 async function pushWatchers(ping) {
   const rows = await q('SELECT hash, subscription, cats, lat, lng, radius_km FROM watchers WHERE subscription IS NOT NULL AND hash<>?', [ping.owner_hash]);
   const payload = {
-    title: `${TYPE_LABEL[ping.type]} — nouveau ${ping.kind}`,
+    title: `${TYPE_LABEL[ping.type]} — ${ping.kind === 'besoin' ? 'nouveau besoin' : 'nouvelle assistance'}`,
     body: ping.title,
     url: `/#p=${ping.id}`,
   };
@@ -417,6 +417,7 @@ app.get('/qr.svg', async (req, res) => {
 
 app.use('/uploads', express.static(UP_DIR, { maxAge: '1d', immutable: true }));
 app.use('/vendor/leaflet', express.static(path.join(__dirname, 'node_modules', 'leaflet', 'dist'), { maxAge: '30d' }));
+app.use('/vendor/markercluster', express.static(path.join(__dirname, 'node_modules', 'leaflet.markercluster', 'dist'), { maxAge: '30d' }));
 app.use(express.static(path.join(__dirname, 'public'), { maxAge: '5m' }));
 
 // ---------- nettoyage : TTL 24 h public, purge définitive à 72 h ----------

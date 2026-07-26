@@ -1,6 +1,8 @@
 /* Entraide Feu — service worker : cache hors-ligne + notifications push */
-const CACHE = 'ef-v1';
-const SHELL = ['/', '/app.js', '/style.css', '/icon.svg', '/vendor/leaflet/leaflet.js', '/vendor/leaflet/leaflet.css'];
+const CACHE = 'ef-v2';
+const SHELL = ['/', '/app.js', '/style.css', '/icon.svg',
+  '/vendor/leaflet/leaflet.js', '/vendor/leaflet/leaflet.css',
+  '/vendor/markercluster/leaflet.markercluster.js', '/vendor/markercluster/MarkerCluster.css', '/vendor/markercluster/MarkerCluster.Default.css'];
 
 self.addEventListener('install', e => {
   e.waitUntil(caches.open(CACHE).then(c => c.addAll(SHELL)).then(() => self.skipWaiting()));

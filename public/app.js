@@ -13,7 +13,7 @@ const TYPE_META = {
 const PROF_LABEL = { pompier: 'se déclare pompier 🚒', policier: 'se déclare policier 👮', soignant: 'se déclare soignant ⚕️' };
 
 let map, state = null, filter = 'all';
-let markers = new Map(), haloLayers = [], zoneLayers = [];
+let markers = new Map(), haloLayers = [], zoneLayers = [], cluster = null;
 let placing = null;      // { draft, marker } pendant le placement
 let recBlob = null, recMime = null, mediaRec = null;
 let photoBlob = null;
@@ -66,6 +66,8 @@ function initMap() {
   L.tileLayer('https://tile.openstreetmap.org/{z}/{x}/{y}.png', {
     maxZoom: 19, attribution: '© OpenStreetMap',
   }).addTo(map);
+  cluster = L.markerClusterGroup({ maxClusterRadius: 45, showCoverageOnHover: false });
+  map.addLayer(cluster);
   navigator.geolocation?.getCurrentPosition(p => {
     if (!openPingId) map.setView([p.coords.latitude, p.coords.longitude], 12);
   }, () => {}, { timeout: 5000 });
@@ -88,11 +90,13 @@ function render() {
     if (markers.has(p.id)) {
       markers.get(p.id).setIcon(icon).setLatLng([p.lat, p.lng]);
     } else {
-      const m = L.marker([p.lat, p.lng], { icon }).addTo(map).on('click', () => openSheet(p.id));
+      const m = L.marker([p.lat, p.lng], { icon }).on('click', () => openSheet(p.id));
+      cluster.addLayer(m);
       markers.set(p.id, m);
     }
   }
-  for (const [id, m] of markers) if (!keep.has(id)) { m.remove(); markers.delete(id); }
+  for (const [id, m] of markers) if (!keep.has(id)) { cluster.removeLayer(m); markers.delete(id); }
+  cluster.refreshClusters();
 
   // halos qui-vive
   haloLayers.forEach(l => l.remove());
@@ -188,7 +192,7 @@ function renderSheet(id, soft) {
   const myOut = state.contact.outgoing.find(c => c.pingId === p.id);
 
   let html = `<h3>${meta.emoji} ${esc(p.title)}</h3>
-    <div><span class="badge" style="background:${meta.color}">${p.kind === 'besoin' ? '🆘 Besoin' : '🤝 Offre'} — ${meta.label}</span>
+    <div><span class="badge" style="background:${meta.color}">${p.kind === 'besoin' ? '🆘 Besoin' : '🛟 Assistance'} — ${meta.label}</span>
     <span class="badge">${timeAgo(p.at)}</span>
     ${p.ownerName ? `<span class="badge">par ${esc(p.ownerName)}</span>` : ''}
     ${p.ownerProf ? `<span class="badge prof">${PROF_LABEL[p.ownerProf]}</span>` : ''}
@@ -289,7 +293,7 @@ function sharePing(p) {
 /* ---------- émission ---------- */
 function openEmit(kind, prefill) {
   photoBlob = null; recBlob = null; $('#emitAttach').textContent = '';
-  $('#emitTitle').textContent = kind === 'besoin' ? '🆘 Émettre un besoin' : '🤝 Déclarer une offre';
+  $('#emitTitle').textContent = kind === 'besoin' ? '🆘 Émettre un besoin' : '🛟 Proposer une assistance';
   const types = kind === 'besoin' ? ['humain', 'materiel', 'medical'] : ['collecte', 'refuge'];
   $('#emitTypes').innerHTML = types.map(t => `<button class="chip" data-v="${t}">${TYPE_META[t].emoji} ${TYPE_META[t].label}</button>`).join('');
   chipsToggle($('#emitTypes'), false);

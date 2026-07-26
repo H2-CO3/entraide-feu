@@ -9,6 +9,8 @@
 <link rel="manifest" href="/manifest.webmanifest">
 <meta name="theme-color" content="#1a1d24">
 <link rel="stylesheet" href="/vendor/leaflet/leaflet.css">
+<link rel="stylesheet" href="/vendor/markercluster/MarkerCluster.css">
+<link rel="stylesheet" href="/vendor/markercluster/MarkerCluster.Default.css">
 <link rel="stylesheet" href="/style.css">
 </head>
 <body>
@@ -59,7 +61,7 @@
   <div class="chips" id="filters">
     <button class="chip on" data-f="all">Tout</button>
     <button class="chip" data-f="besoin">🆘 Besoins</button>
-    <button class="chip" data-f="offre">🤝 Offres</button>
+    <button class="chip" data-f="offre">🛟 Assistance</button>
   </div>
 </header>
 
@@ -165,6 +167,7 @@
 <div id="toasts"></div>
 
 <script src="/vendor/leaflet/leaflet.js"></script>
+<script src="/vendor/markercluster/leaflet.markercluster.js"></script>
 <script src="/app.js"></script>
 </body>
 </html>
