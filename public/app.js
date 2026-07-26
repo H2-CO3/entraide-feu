@@ -64,8 +64,11 @@ function inDangerZone(lat, lng) {
 }
 function chipsToggle(container, multi = true) {
   container.querySelectorAll('.chip').forEach(ch => ch.onclick = () => {
-    if (!multi) container.querySelectorAll('.chip').forEach(o => o.classList.remove('on'));
-    ch.classList.toggle('on');
+    if (multi) return ch.classList.toggle('on');
+    // sélection unique : re-cliquer la puce active la désélectionne
+    const wasOn = ch.classList.contains('on');
+    container.querySelectorAll('.chip').forEach(o => o.classList.remove('on'));
+    ch.classList.toggle('on', !wasOn);
   });
 }
 const chipsValues = container => [...container.querySelectorAll('.chip.on')].map(c => c.dataset.v);
