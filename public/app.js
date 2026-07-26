@@ -129,11 +129,11 @@ function render() {
   for (const [id, m] of markers) if (!keep.has(id)) { cluster.removeLayer(m); markers.delete(id); }
   cluster.refreshClusters();
 
-  // halos qui-vive
+  // halos des dépanneurs actifs — visibles sur « Tout » et sur le filtre Assistance
   haloLayers.forEach(l => l.remove());
-  haloLayers = state.halos.map(h =>
-    L.circle([h.lat, h.lng], { radius: 500, color: '#2e9e5b', weight: 1, fillOpacity: .15 })
-      .addTo(map).bindTooltip('💪 Dépanneur en veille' + (h.cats ? ' — ' + h.cats.split(',').map(c => TYPE_META[c]?.label || c).join(', ') : '')));
+  haloLayers = (filter === 'besoin') ? [] : state.halos.map(h =>
+    L.circle([h.lat, h.lng], { radius: 500, color: '#2e9e5b', weight: 2, fillOpacity: .2 })
+      .addTo(map).bindTooltip('🟢 Dépanneur actif' + (h.cats ? ' — ' + h.cats.split(',').map(c => TYPE_META[c]?.label || c).join(', ') : '')));
 
   // points officiels (préfecture / mairies) — non clusterisés, toujours visibles
   const O_EMOJI = { refuge: '🏠', collecte: '📥', info: 'ℹ️' };
@@ -153,7 +153,27 @@ function render() {
       .addTo(map).bindTooltip('⚠️ ' + esc(z.label)));
 
   renderBanners();
+  renderMainButtons();
   if (openPingId) renderSheet(openPingId, true);
+}
+
+/* Boutons principaux selon le rôle :
+   - besoin actif → « Besoin d'aide » devient le suivi de sa demande
+   - dépanneur configuré → « Je dépanne » disparaît (réglages via 👤)
+   - aucun choix → les deux boutons */
+function renderMainButtons() {
+  const myNeed = state.pings.find(p => p.mine && p.kind === 'besoin');
+  const w = state.me?.watch;
+  const helperActive = !!(w && (w.cats || w.visible || w.subscribed));
+  const bNeed = $('#btnNeed'), bHelp = $('#btnHelp');
+  if (myNeed) {
+    bNeed.innerHTML = '📋 Ma demande <span class="muted">(suivi)</span>';
+    bNeed.onclick = () => { map.setView([myNeed.lat, myNeed.lng], 14); openSheet(myNeed.id); };
+  } else {
+    bNeed.textContent = '🆘 Besoin d\'aide';
+    bNeed.onclick = () => openEmit('besoin');
+  }
+  bHelp.classList.toggle('hidden', helperActive);
 }
 
 /* ---------- polling ---------- */
@@ -530,6 +550,14 @@ function setupHelp() {
   };
   $('#helpCancel').onclick = () => panel.classList.add('hidden');
   $('#helpOffer').onclick = () => { panel.classList.add('hidden'); openEmit('offre'); };
+  $('#helpStop').onclick = async () => {
+    try {
+      await api('/api/watch/stop', { method: 'POST', json: {} });
+      toast('Disponibilité désactivée');
+      panel.classList.add('hidden');
+      poll(); // le bouton « Je dépanne » réapparaît
+    } catch (e) { toast(e.message, true); }
+  };
   $('#helpSave').onclick = async () => {
     const cats = [...chipsValues($('#helpCats')), ...chipsValues($('#helpOffres'))];
     const visible = $('#helpVisible').checked;
@@ -582,6 +610,7 @@ function setupProfile() {
       poll();
     } catch (e) { toast(e.message, true); }
   };
+  $('#pfHelp').onclick = () => { $('#profileModal').classList.add('hidden'); $('#btnHelp').click(); };
   $('#pfReplay').onclick = () => {
     $('#profileModal').classList.add('hidden');
     obGoto(1);

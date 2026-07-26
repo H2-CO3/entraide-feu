@@ -7,6 +7,7 @@ const multer = require('multer');
 const webpush = require('web-push');
 const QRCode = require('qrcode');
 const { q, init } = require('./db');
+const { runImport } = require('./importer');
 
 const DATA_DIR = path.join(__dirname, 'data');
 const UP_DIR = path.join(__dirname, 'uploads');
@@ -430,6 +431,10 @@ app.post('/api/admin/official-delete', adminOnly, async (req, res) => {
   await q('DELETE FROM official_points WHERE id=?', [+req.body.id]);
   res.json({ ok: true });
 });
+app.post('/api/admin/import-alertesfeux', adminOnly, async (req, res) => {
+  const r = await runImport();
+  res.json(r);
+});
 
 // ---------- pages ----------
 
@@ -487,9 +492,15 @@ async function cleanup() {
 }
 
 // ---------- démarrage ----------
+const doImport = () => runImport()
+  .then(r => console.log(`Import alertesfeux.fr : ${r.ok}/${r.total} points (${r.skipped} non géolocalisables)`))
+  .catch(e => logErr('import alertesfeux.fr', e));
+
 init().then(() => {
   setInterval(cleanup, 600000).unref();
   cleanup();
+  doImport();
+  setInterval(doImport, 6 * 3600000).unref();
   const port = Number(process.env.PORT) || 3000;
   app.listen(port, () => {
     console.log(`Entraide Feu sur le port ${port}`);

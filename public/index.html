@@ -155,7 +155,7 @@
       <input type="range" id="helpRadius" min="2" max="100" value="20">
     </label>
     <label class="switch"><input type="checkbox" id="helpNotif"> 🔔 Recevoir les alertes (notifications)</label>
-    <label class="switch"><input type="checkbox" id="helpVisible"> 👁️ Me montrer «&nbsp;sur le qui-vive&nbsp;» sur la carte <span class="muted small">(position floutée à ~500&nbsp;m)</span></label>
+    <label class="switch"><input type="checkbox" id="helpVisible"> 🟢 <b>Actif</b> : visible sur la carte pour être contacté <span class="muted small">(position floutée à ~500&nbsp;m)</span></label>
     <p class="small muted" id="helpIosHint" hidden>📱 Sur iPhone : ajoutez d'abord le site à l'écran d'accueil (Partager → Sur l'écran d'accueil) pour recevoir les notifications.</p>
     <div class="row">
       <button class="btn ghost small-btn" id="helpOffer">➕ Déclarer collecte / refuge</button>
@@ -164,6 +164,7 @@
       <button class="btn ghost" id="helpCancel">Fermer</button>
       <button class="btn" id="helpSave">Enregistrer</button>
     </div>
+    <button class="linklike" id="helpStop">Ne plus être disponible (désactiver)</button>
   </div>
 </div>
 
@@ -187,7 +188,7 @@
       <li>🙋 📦 ⚕️ — <b>Besoins</b> émis par les habitants et les équipes sur place</li>
       <li>📥 🏠 — <b>Assistance</b> citoyenne : points de collecte, refuges</li>
       <li><span class="offpin-mini">🏠</span> — <b>Point officiel</b> (préfecture, mairie) : hébergement, collecte, animaux</li>
-      <li><span class="halo-mini"></span> — Dépanneur «&nbsp;sur le qui-vive&nbsp;» (position floutée à ~500 m)</li>
+      <li><span class="halo-mini"></span> — Dépanneur <b>actif</b>, contactable (position floutée à ~500 m)</li>
       <li><span class="fire-mini"></span> — Détections satellites NASA du <b id="fireDate"></b> (latence de plusieurs heures — indicatif)</li>
       <li><span class="zone-mini"></span> — Zone de danger / évacuée</li>
       <li><span class="cluster-mini">5</span> — Plusieurs fiches regroupées : zoomez ou touchez</li>
@@ -226,6 +227,7 @@
       <button class="btn ghost" id="pfCancel">Fermer</button>
       <button class="btn" id="pfSave">Enregistrer</button>
     </div>
+    <button class="btn ghost" id="pfHelp">💪 Mes préférences d'assistance</button>
     <button class="linklike" id="pfReplay">Revoir l'écran d'introduction</button>
   </div>
 </div>
