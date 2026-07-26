@@ -66,6 +66,18 @@ a { color: #7ab8ff; }
   background: #232838; border-radius: 16px; padding: 1.2rem; width: 100%; max-width: 440px;
   max-height: 92vh; overflow-y: auto;
 }
+/* onboarding : étapes plein écran, une idée à la fois */
+.ob-full { padding: 0; background: #1a1d24; }
+.ob-full .ob-card {
+  max-width: none; height: 100%; max-height: none; border-radius: 0;
+  display: flex; flex-direction: column; justify-content: center;
+  padding: 2rem 1.4rem; text-align: center;
+}
+.ob-full .ob-step { max-width: 420px; margin: 0 auto; width: 100%; }
+.ob-emoji { font-size: 3.2rem; margin-bottom: .8rem; }
+.ob-dots { color: #4a5266; letter-spacing: .4rem; margin-top: 1.4rem; font-size: .8rem; }
+.ob-full .chips { justify-content: center; }
+.ob-full .warn { text-align: center; font-size: 1rem; }
 .ob-card h1 { margin-bottom: .6rem; }
 .ob-card h2, .modal h2 { margin-bottom: .5rem; }
 .lead { margin: .5rem 0 .8rem; line-height: 1.45; }
@@ -123,12 +135,12 @@ input[type=text], input[type=tel], textarea {
 }
 #footer a { font-weight: 600; }
 
-/* attribution Leaflet : en haut à droite, discrète, hors des boutons */
+/* attribution Leaflet : minuscule et translucide, hors des boutons */
 .leaflet-control-attribution {
-  background: rgba(20, 22, 28, .7) !important; color: #9aa3b2 !important;
-  font-size: .68rem !important; border-radius: 0 0 0 8px;
+  background: rgba(20, 22, 28, .45) !important; color: rgba(154,163,178,.8) !important;
+  font-size: .6rem !important; border-radius: 0 0 0 6px; padding: 0 4px !important;
 }
-.leaflet-control-attribution a { color: #7ab8ff !important; }
+.leaflet-control-attribution a { color: rgba(122,184,255,.8) !important; }
 
 /* ---- points officiels ---- */
 .offpin {

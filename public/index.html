@@ -15,37 +15,54 @@
 </head>
 <body>
 
-<!-- ============ ONBOARDING ============ -->
-<div id="onboarding" class="overlay hidden">
+<!-- ============ ONBOARDING (étapes plein écran) ============ -->
+<div id="onboarding" class="overlay ob-full hidden">
   <div class="ob-card">
     <div class="ob-step" id="ob1">
-      <h1>🔥 Entraide Feu</h1>
-      <p class="lead">Carte d'entraide pour la zone touchée par l'incendie.
-      Émettez un <b>besoin urgent</b> ou proposez votre <b>aide</b> : les fiches sont publiques,
-      géolocalisées, et disparaissent après <b>24&nbsp;h</b>.</p>
-      <p class="warn">⚠️ N'allez <b>jamais</b> en zone dangereuse ou évacuée.<br>
-      Urgence vitale : appelez le <a href="tel:18">18</a> ou le <a href="tel:112">112</a> — pas de fiche.</p>
-      <button class="btn big" id="obNext">Continuer</button>
+      <p class="ob-emoji">🔥</p>
+      <h1>Entraide Feu</h1>
+      <p class="lead">La carte d'entraide de la zone incendiée.<br>
+      Des besoins, des coups de main, en direct.<br>Sans compte, sans inscription.</p>
+      <button class="btn big" id="obNext1">Continuer</button>
+      <p class="ob-dots">● ○ ○ ○</p>
     </div>
     <div class="ob-step hidden" id="ob2">
-      <h2>Qui êtes-vous&nbsp;? <span class="muted">(facultatif)</span></h2>
-      <input id="obName" type="text" maxlength="40" placeholder="Prénom ou pseudo" autocomplete="given-name">
-      <p class="muted small">Si vous êtes professionnel, vous pouvez le déclarer <b>sur l'honneur</b> —
-      un badge «&nbsp;se déclare…&nbsp;» apparaîtra sur vos fiches :</p>
-      <div class="chips" id="obProf">
-        <button class="chip" data-v="pompier">🚒 Pompier</button>
-        <button class="chip" data-v="policier">👮 Policier / gendarme</button>
-        <button class="chip" data-v="soignant">⚕️ Soignant</button>
-      </div>
-      <p class="small muted">En continuant, vous acceptez le dépôt d'un <b>cookie technique anonyme</b>
-      (identifie votre navigateur, jamais votre personne) et vous <b>engagez votre responsabilité</b>
-      sur la sincérité de vos déclarations. Aucune donnée n'est conservée plus de 24&nbsp;h après expiration des fiches.
-      <a href="/legal.html" target="_blank">Mentions légales</a></p>
-      <button class="btn big" id="obAccept">J'accepte et je continue</button>
+      <p class="ob-emoji">⚠️</p>
+      <h1>Avant tout</h1>
+      <p class="lead">Cet outil ne remplace pas les secours.</p>
+      <p class="warn">Urgence vitale → appelez le <a href="tel:18">18</a> ou le <a href="tel:112">112</a>.<br><br>
+      N'allez <b>jamais</b> en zone dangereuse ou évacuée.</p>
+      <button class="btn big" id="obNext2">J'ai compris</button>
+      <p class="ob-dots">○ ● ○ ○</p>
     </div>
     <div class="ob-step hidden" id="ob3">
-      <h2>Par quoi voulez-vous commencer&nbsp;?</h2>
-      <button class="btn big need" id="obNeed">🆘 Besoin d'aide&nbsp;?</button>
+      <p class="ob-emoji">👤</p>
+      <h1>Votre prénom</h1>
+      <p class="lead">Il s'affiche sur vos fiches et rassure ceux qui vous répondent.</p>
+      <input id="obName" type="text" maxlength="40" placeholder="Prénom ou pseudo *" autocomplete="given-name">
+      <p class="muted small">Professionnel&nbsp;? Déclarez-le <b>sur l'honneur</b> (badge «&nbsp;se déclare…&nbsp;») — facultatif :</p>
+      <div class="chips" id="obProf">
+        <button class="chip" data-v="pompier">🚒 Pompier</button>
+        <button class="chip" data-v="policier">👮 Policier</button>
+        <button class="chip" data-v="soignant">⚕️ Soignant</button>
+      </div>
+      <button class="btn big" id="obNext3">Continuer</button>
+      <p class="ob-dots">○ ○ ● ○</p>
+    </div>
+    <div class="ob-step hidden" id="ob4">
+      <p class="ob-emoji">🍪</p>
+      <h1>Un cookie, c'est tout</h1>
+      <p class="lead">Un cookie technique <b>anonyme</b> identifie votre navigateur — jamais votre personne —
+      pour que vous puissiez gérer vos fiches.</p>
+      <p class="small muted">En acceptant, vous engagez votre responsabilité sur la sincérité de vos déclarations.
+      Tout expire automatiquement sous 24&nbsp;h. <a href="/legal.html" target="_blank">Mentions légales</a></p>
+      <button class="btn big" id="obAccept">J'accepte</button>
+      <p class="ob-dots">○ ○ ○ ●</p>
+    </div>
+    <div class="ob-step hidden" id="ob5">
+      <p class="ob-emoji">🤝</p>
+      <h1>On commence&nbsp;?</h1>
+      <button class="btn big need" id="obNeed">🆘 Besoin d'aide</button>
       <button class="btn big help" id="obHelp">💪 Je dépanne</button>
       <button class="linklike" id="obSkip">Juste voir la carte</button>
     </div>
@@ -171,7 +188,7 @@
       <li>📥 🏠 — <b>Assistance</b> citoyenne : points de collecte, refuges</li>
       <li><span class="offpin-mini">🏠</span> — <b>Point officiel</b> (préfecture, mairie) : hébergement, collecte, animaux</li>
       <li><span class="halo-mini"></span> — Dépanneur «&nbsp;sur le qui-vive&nbsp;» (position floutée à ~500 m)</li>
-      <li><span class="fire-mini"></span> — Détections satellites NASA (latence de plusieurs heures — indicatif)</li>
+      <li><span class="fire-mini"></span> — Détections satellites NASA du <b id="fireDate"></b> (latence de plusieurs heures — indicatif)</li>
       <li><span class="zone-mini"></span> — Zone de danger / évacuée</li>
       <li><span class="cluster-mini">5</span> — Plusieurs fiches regroupées : zoomez ou touchez</li>
     </ul>

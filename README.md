@@ -59,6 +59,8 @@ Le pool est limité à 5 connexions (adapté aux hébergements mutualisés).
 - Garder le process en vie : `pm2 start server.js --name entraide-feu` ou une unité systemd.
 - `BASE_URL=https://votre-sous-domaine.fr` (sert aux liens de partage et au QR).
 - Sauvegarde : la base expire d'elle-même en 24-72 h ; un dump quotidien suffit largement.
+- Purge des données de test : `npm run purge` (fiches + uploads), `npm run purge:all`
+  (+ identités et vigies), `npm run purge:full` (+ points officiels et zones).
 
 ### Pages
 

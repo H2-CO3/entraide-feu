@@ -69,14 +69,17 @@ function initMap() {
     maxZoom: 19, attribution: '© OpenStreetMap',
   }).addTo(map);
 
-  // Points chauds satellites NASA (GIBS, sans clé) : aujourd'hui net + hier estompé
-  const GIBS = 'https://gibs.earthdata.nasa.gov/wms/epsg3857/best/wms.cgi';
-  const FIRE_WMS = 'VIIRS_SNPP_Thermal_Anomalies_375m_All,VIIRS_NOAA20_Thermal_Anomalies_375m_All,MODIS_Terra_Thermal_Anomalies_All,MODIS_Aqua_Thermal_Anomalies_All';
-  const day = d => new Date(Date.now() - d * 86400000).toISOString().slice(0, 10);
+  // Points chauds satellites NASA (GIBS, sans clé) — UNE seule couche, tuiles 512,
+  // pas de sur-requête au zoom : léger pour les mobiles
+  const day = new Date().toISOString().slice(0, 10);
   fireLayers = [
-    L.tileLayer.wms(GIBS, { layers: FIRE_WMS, format: 'image/png', transparent: true, time: day(1), opacity: .3 }),
-    L.tileLayer.wms(GIBS, { layers: FIRE_WMS, format: 'image/png', transparent: true, time: day(0), opacity: .85, attribution: `🛰️ Feux : NASA GIBS (${day(0)})` }),
+    L.tileLayer.wms('https://gibs.earthdata.nasa.gov/wms/epsg3857/best/wms.cgi', {
+      layers: 'VIIRS_SNPP_Thermal_Anomalies_375m_All,VIIRS_NOAA20_Thermal_Anomalies_375m_All,MODIS_Terra_Thermal_Anomalies_All',
+      format: 'image/png', transparent: true, time: day,
+      tileSize: 512, maxNativeZoom: 11, opacity: .8, updateWhenIdle: true,
+    }),
   ];
+  const fd = $('#fireDate'); if (fd) fd.textContent = day;
   setFireLayer(true);
 
   cluster = L.markerClusterGroup({ maxClusterRadius: 45, showCoverageOnHover: false });
@@ -90,10 +93,15 @@ function setFireLayer(on) {
   fireOn = on;
   fireLayers.forEach(l => on ? l.addTo(map) : l.remove());
   $('#fireToggle')?.classList.toggle('on', on);
-  if (on && !sessionStorage.getItem('fireCaveat')) {
-    sessionStorage.setItem('fireCaveat', '1');
-    toast('🛰️ Points chauds satellites NASA — indicatifs, latence de plusieurs heures. Ne vous y fiez pas pour votre sécurité.');
-  }
+  maybeFireCaveat();
+}
+function maybeFireCaveat() {
+  // l'avertissement satellites n'apparaît que carte visible (jamais par-dessus l'onboarding)
+  if (!fireOn || sessionStorage.getItem('fireCaveat')) return;
+  // pas encore onboardé (ou onboarding rejoué à l'écran) → on attend la carte
+  if (!localStorage.getItem('onboarded') || !$('#onboarding').classList.contains('hidden')) return;
+  sessionStorage.setItem('fireCaveat', '1');
+  toast('🛰️ Points chauds satellites NASA — indicatifs, latence de plusieurs heures. Ne vous y fiez pas pour votre sécurité.');
 }
 
 function render() {
@@ -456,7 +464,7 @@ async function submitPing() {
 }
 
 /* ---------- notifications push ---------- */
-function pushSupported() { return 'serviceWorker' in navigator && 'PushManager' in window && Notification.permission !== 'denied'; }
+function pushSupported() { return 'serviceWorker' in navigator && 'PushManager' in window && typeof Notification !== 'undefined' && Notification.permission !== 'denied'; }
 function isIosNoPush() {
   const ios = /iP(hone|ad|od)/.test(navigator.userAgent);
   return ios && !window.navigator.standalone && !('PushManager' in window);
@@ -562,29 +570,34 @@ function setupProfile() {
   };
   $('#pfReplay').onclick = () => {
     $('#profileModal').classList.add('hidden');
-    $('#ob1').classList.remove('hidden'); $('#ob2').classList.add('hidden'); $('#ob3').classList.add('hidden');
+    obGoto(1);
     $('#obName').value = state?.me?.name || '';
     $('#onboarding').classList.remove('hidden');
   };
 }
 
 /* ---------- onboarding ---------- */
+function obGoto(n) {
+  for (let i = 1; i <= 5; i++) $('#ob' + i).classList.toggle('hidden', i !== n);
+}
 function setupOnboarding() {
-  const done = localStorage.getItem('onboarded');
-  if (!done) $('#onboarding').classList.remove('hidden');
+  if (!localStorage.getItem('onboarded')) $('#onboarding').classList.remove('hidden');
   chipsToggle($('#obProf'), false);
-  $('#obNext').onclick = () => { $('#ob1').classList.add('hidden'); $('#ob2').classList.remove('hidden'); };
-  $('#obAccept').onclick = async () => {
-    const name = $('#obName').value.trim();
-    const prof = chipsValues($('#obProf'))[0] || null;
-    await api('/api/onboard', { json: { name, profession: prof } }).catch(() => {});
-    poll(); // rafraîchit state.me immédiatement (sinon le profil paraît vide jusqu'au prochain poll)
-    localStorage.setItem('onboarded', '1');
-    $('#ob2').classList.add('hidden'); $('#ob3').classList.remove('hidden');
+  $('#obNext1').onclick = () => obGoto(2);
+  $('#obNext2').onclick = () => obGoto(3);
+  $('#obNext3').onclick = () => {
+    if (!$('#obName').value.trim()) { toast('Votre prénom est nécessaire 🙏', true); $('#obName').focus(); return; }
+    obGoto(4);
   };
-  $('#obNeed').onclick = () => { $('#onboarding').classList.add('hidden'); openEmit('besoin'); };
-  $('#obHelp').onclick = () => { $('#onboarding').classList.add('hidden'); $('#btnHelp').click(); };
-  $('#obSkip').onclick = () => $('#onboarding').classList.add('hidden');
+  $('#obAccept').onclick = async () => {
+    await api('/api/onboard', { json: { name: $('#obName').value.trim(), profession: chipsValues($('#obProf'))[0] || null } }).catch(() => {});
+    poll(); // rafraîchit state.me immédiatement
+    localStorage.setItem('onboarded', '1');
+    obGoto(5);
+  };
+  $('#obNeed').onclick = () => { $('#onboarding').classList.add('hidden'); maybeFireCaveat(); openEmit('besoin'); };
+  $('#obHelp').onclick = () => { $('#onboarding').classList.add('hidden'); maybeFireCaveat(); $('#btnHelp').click(); };
+  $('#obSkip').onclick = () => { $('#onboarding').classList.add('hidden'); maybeFireCaveat(); };
 }
 
 /* ---------- init ---------- */
@@ -601,7 +614,11 @@ function setupUI() {
   $('#placeCancel').onclick = stopPlacing;
   $('#placeOk').onclick = submitPing;
   $('#doneClose').onclick = () => $('#doneModal').classList.add('hidden');
-  $('#doneNotif').onclick = async () => { await askNotifPermission(); toast(Notification.permission === 'granted' ? 'Notifications activées 🔔' : 'Notifications refusées', Notification.permission !== 'granted'); };
+  $('#doneNotif').onclick = async () => {
+    await askNotifPermission();
+    const ok = typeof Notification !== 'undefined' && Notification.permission === 'granted';
+    toast(ok ? 'Notifications activées 🔔' : 'Notifications indisponibles sur cet appareil', !ok);
+  };
   setupEmit(); setupHelp(); setupOnboarding(); setupProfile();
 }
 

@@ -5,7 +5,10 @@
   "main": "server.js",
   "scripts": {
     "start": "node server.js",
-    "vapid": "web-push generate-vapid-keys"
+    "vapid": "web-push generate-vapid-keys",
+    "purge": "node scripts/purge.js",
+    "purge:all": "node scripts/purge.js --all",
+    "purge:full": "node scripts/purge.js --full"
   },
   "engines": {
     "node": ">=18"
