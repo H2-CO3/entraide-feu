@@ -56,7 +56,10 @@
 <header id="topbar">
   <div class="row1">
     <span class="logo">🔥 Entraide Feu</span>
-    <span id="statsline" class="muted small"></span>
+    <span style="display:flex;align-items:center;gap:.5rem">
+      <span id="statsline" class="muted small"></span>
+      <button class="chip" id="btnProfile" title="Mon profil">👤</button>
+    </span>
   </div>
   <div class="chips" id="filters">
     <button class="chip on" data-f="all">Tout</button>
@@ -156,6 +159,26 @@
     <button class="btn" id="doneNotif">🔔 Me prévenir quand quelqu'un arrive</button>
     <button class="btn ghost" id="doneShare">📤 Partager la fiche</button>
     <button class="linklike" id="doneClose">Fermer</button>
+  </div>
+</div>
+
+<!-- ============ PROFIL ============ -->
+<div id="profileModal" class="overlay hidden">
+  <div class="modal">
+    <h2>👤 Mon profil</h2>
+    <p class="small muted">Visible sur vos fiches et vos «&nbsp;j'arrive&nbsp;». Identité rattachée à ce navigateur uniquement.</p>
+    <input id="pfName" type="text" maxlength="40" placeholder="Prénom ou pseudo" autocomplete="given-name">
+    <div class="chips" id="pfProf">
+      <button class="chip" data-v="pompier">🚒 Pompier</button>
+      <button class="chip" data-v="policier">👮 Policier / gendarme</button>
+      <button class="chip" data-v="soignant">⚕️ Soignant</button>
+    </div>
+    <p class="small muted">Déclaration sur l'honneur — le badge affiché sera «&nbsp;se déclare…&nbsp;».</p>
+    <div class="row">
+      <button class="btn ghost" id="pfCancel">Fermer</button>
+      <button class="btn" id="pfSave">Enregistrer</button>
+    </div>
+    <button class="linklike" id="pfReplay">Revoir l'écran d'introduction</button>
   </div>
 </div>
 

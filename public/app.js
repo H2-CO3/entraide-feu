@@ -508,6 +508,32 @@ function setupHelp() {
   };
 }
 
+/* ---------- profil ---------- */
+function setupProfile() {
+  chipsToggle($('#pfProf'), false);
+  $('#btnProfile').onclick = () => {
+    const me = state?.me || {};
+    $('#pfName').value = me.name || '';
+    $('#pfProf').querySelectorAll('.chip').forEach(c => c.classList.toggle('on', c.dataset.v === me.prof));
+    $('#profileModal').classList.remove('hidden');
+  };
+  $('#pfCancel').onclick = () => $('#profileModal').classList.add('hidden');
+  $('#pfSave').onclick = async () => {
+    try {
+      await api('/api/onboard', { json: { name: $('#pfName').value.trim(), profession: chipsValues($('#pfProf'))[0] || null } });
+      toast('Profil enregistré 👤');
+      $('#profileModal').classList.add('hidden');
+      poll();
+    } catch (e) { toast(e.message, true); }
+  };
+  $('#pfReplay').onclick = () => {
+    $('#profileModal').classList.add('hidden');
+    $('#ob1').classList.remove('hidden'); $('#ob2').classList.add('hidden'); $('#ob3').classList.add('hidden');
+    $('#obName').value = state?.me?.name || '';
+    $('#onboarding').classList.remove('hidden');
+  };
+}
+
 /* ---------- onboarding ---------- */
 function setupOnboarding() {
   const done = localStorage.getItem('onboarded');
@@ -518,6 +544,7 @@ function setupOnboarding() {
     const name = $('#obName').value.trim();
     const prof = chipsValues($('#obProf'))[0] || null;
     await api('/api/onboard', { json: { name, profession: prof } }).catch(() => {});
+    poll(); // rafraîchit state.me immédiatement (sinon le profil paraît vide jusqu'au prochain poll)
     localStorage.setItem('onboarded', '1');
     $('#ob2').classList.add('hidden'); $('#ob3').classList.remove('hidden');
   };
@@ -538,7 +565,7 @@ function setupUI() {
   $('#placeOk').onclick = submitPing;
   $('#doneClose').onclick = () => $('#doneModal').classList.add('hidden');
   $('#doneNotif').onclick = async () => { await askNotifPermission(); toast(Notification.permission === 'granted' ? 'Notifications activées 🔔' : 'Notifications refusées', Notification.permission !== 'granted'); };
-  setupEmit(); setupHelp(); setupOnboarding();
+  setupEmit(); setupHelp(); setupOnboarding(); setupProfile();
 }
 
 async function boot() {
