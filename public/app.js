@@ -305,6 +305,13 @@ function renderSheet(id, soft) {
         <button class="btn ghost" id="fAskPhone">📞 Demander son numéro</button>
         <button class="btn ghost" id="fShare">📤 Partager</button>
         <button class="btn ghost" id="fReport">⚠️</button>
+      </div>
+      <button class="linklike" id="fCodeLink">C'est ma fiche mais j'ai changé d'appareil (code de clôture)</button>
+      <div id="fCodeForm" class="hidden">
+        <div class="row">
+          <input type="text" id="fCode" inputmode="numeric" maxlength="4" placeholder="Code à 4 chiffres">
+          <button class="btn" id="fCodeGo">Clôturer</button>
+        </div>
       </div>`;
     $('#fArrive').onclick = () => { $('#arrForm').classList.remove('hidden'); $('#fArrive').classList.add('hidden'); chipsToggle($('#arrEta'), false); };
     $('#arrGo').onclick = async () => {
@@ -315,6 +322,13 @@ function renderSheet(id, soft) {
     };
     $('#fAskPhone').onclick = async () => {
       try { await api(`/api/pings/${p.id}/contact-request`, { method: 'POST', json: {} }); toast('Demande envoyée — réponse ici même'); askNotifPermission(); poll(); } catch (e) { toast(e.message, true); }
+    };
+    $('#fCodeLink').onclick = () => { $('#fCodeForm').classList.remove('hidden'); $('#fCodeLink').classList.add('hidden'); $('#fCode').focus(); };
+    $('#fCodeGo').onclick = async () => {
+      const code = $('#fCode').value.trim();
+      if (!/^\d{4}$/.test(code)) return toast('Le code fait 4 chiffres', true);
+      try { await api(`/api/pings/${p.id}/close`, { json: { code } }); toast('Fiche clôturée ✅'); closeSheet(); poll(); }
+      catch (e) { toast('Code incorrect', true); }
     };
   }
   const shareBtn = $('#fShare');

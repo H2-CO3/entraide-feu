@@ -293,7 +293,12 @@ app.post('/api/pings/:id/close', limited('act', 120), async (req, res) => {
   const p = (await q("SELECT * FROM pings WHERE id=? AND status='open'", [req.params.id]))[0];
   if (!p) return res.status(404).json({ error: 'Ping introuvable.' });
   const byCode = req.body.code && String(req.body.code) === p.close_code;
-  if (p.owner_hash !== req.hash && !byCode) return res.status(403).json({ error: 'Seul l’émetteur peut clôturer (ou via le code de clôture).' });
+  if (p.owner_hash !== req.hash && !byCode) {
+    // anti-brute-force du code à 4 chiffres : 10 essais/heure par IP
+    if (req.body.code && !rateLimit(`code:${req.ip}`, 10, 3600000))
+      return res.status(429).json({ error: 'Trop d’essais, réessayez plus tard.' });
+    return res.status(403).json({ error: 'Seul l’émetteur peut clôturer (ou via le code de clôture).' });
+  }
   await q("UPDATE pings SET status='closed', closed_at=NOW() WHERE id=?", [p.id]);
   if (p.kind === 'besoin') await q("UPDATE stats SET v=v+1 WHERE k='resolved'");
   res.json({ ok: true });
