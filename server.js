@@ -129,6 +129,57 @@ async function pushWatchers(ping) {
   }
 }
 
+// ---------- couche feux : proxy NASA GIBS avec cache ----------
+// Pourquoi un proxy : (1) la NASA publie avec 3-24 h de latence, il faut servir la
+// DERNIÈRE date réellement disponible (lue dans les capabilities WMTS), pas
+// « aujourd'hui » qui est souvent vide ; (2) le cache mutualise les tuiles entre
+// tous les visiteurs au lieu de marteler GIBS depuis chaque mobile.
+// Les deux VIIRS 375 m uniquement : MODIS (1 km) rend en plus un voile bleu de
+// fauchée satellite sur les journées incomplètes, illisible sur la carte
+const FIRE_LAYERS = 'VIIRS_SNPP_Thermal_Anomalies_375m_All,VIIRS_NOAA20_Thermal_Anomalies_375m_All';
+const EMPTY_PNG = Buffer.from('iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mNkYPhfDwAChwGA60e6kgAAAABJRU5ErkJggg==', 'base64');
+const fireTiles = new Map(); // clé bbox|taille|date → {buf, at}
+let fireDate = null;
+
+async function refreshFireDate() {
+  try {
+    const r = await fetch('https://gibs.earthdata.nasa.gov/wmts/epsg3857/best/1.0.0/WMTSCapabilities.xml', { signal: AbortSignal.timeout(20000) });
+    const xml = await r.text();
+    const section = xml.split('VIIRS_SNPP_Thermal_Anomalies_375m_All')[1] || '';
+    const def = (section.match(/<Default>(\d{4}-\d{2}-\d{2})<\/Default>/) || [])[1];
+    if (def) fireDate = def;
+  } catch (e) { logErr('refreshFireDate', e); }
+  if (!fireDate) fireDate = new Date(Date.now() - 86400000).toISOString().slice(0, 10); // repli : hier
+}
+
+app.get('/fires/wms', async (req, res) => {
+  res.set('Content-Type', 'image/png');
+  res.set('Cache-Control', 'public, max-age=1800');
+  try {
+    const bbox = String(req.query.bbox || '');
+    if (!/^-?[\d.]+,-?[\d.]+,-?[\d.]+,-?[\d.]+$/.test(bbox)) return res.status(400).end(EMPTY_PNG);
+    const w = Math.min(512, parseInt(req.query.width) || 512);
+    const h = Math.min(512, parseInt(req.query.height) || 512);
+    const key = `${bbox}|${w}x${h}|${fireDate}`;
+    const hit = fireTiles.get(key);
+    // succès gardé 30 min ; échec gardé 2 min (GIBS est parfois lent : on répond
+    // transparent tout de suite plutôt que de bloquer chaque client 15 s)
+    if (hit && Date.now() - hit.at < (hit.fail ? 120_000 : 1_800_000)) return res.end(hit.buf);
+    let buf = null;
+    try {
+      const r = await fetch('https://gibs.earthdata.nasa.gov/wms/epsg3857/best/wms.cgi' +
+        `?SERVICE=WMS&REQUEST=GetMap&VERSION=1.1.1&FORMAT=image%2Fpng&TRANSPARENT=TRUE&SRS=EPSG%3A3857` +
+        `&LAYERS=${encodeURIComponent(FIRE_LAYERS)}&BBOX=${bbox}&WIDTH=${w}&HEIGHT=${h}&TIME=${fireDate}`,
+        { signal: AbortSignal.timeout(25000) }); // GIBS peut être très lent ; l'échec est mis en cache 2 min
+      if (r.ok && (r.headers.get('content-type') || '').includes('image')) buf = Buffer.from(await r.arrayBuffer());
+    } catch {}
+    fireTiles.set(key, buf ? { buf, at: Date.now() } : { buf: EMPTY_PNG, at: Date.now(), fail: true });
+    if (!buf) return res.end(EMPTY_PNG);
+    if (fireTiles.size > 300) fireTiles.delete(fireTiles.keys().next().value); // LRU grossier, ~15 Mo max
+    res.end(buf);
+  } catch { res.end(EMPTY_PNG); } // une tuile transparente vaut mieux qu'une carte cassée
+});
+
 // ---------- uploads ----------
 const upload = multer({
   storage: multer.memoryStorage(),
@@ -172,16 +223,16 @@ app.get('/api/state', async (req, res) => {
     WHERE p.hidden = 0 AND p.status = 'open' AND p.created_at > NOW() - INTERVAL ${TTL_H} HOUR
     ORDER BY p.created_at DESC LIMIT 500`);
   const ids = pings.map(p => p.id);
-  const [updates, arrivals, myReqs, zones, halos, statsRow, meRows, myWatch, myExpired, officials] = await Promise.all([
+  const [updates, arrivals, myReqs, zones, alertCount, statsRow, meRows, myWatch, myExpired, officials] = await Promise.all([
     ids.length ? q(`SELECT ping_id, text, created_at FROM ping_updates WHERE ping_id IN (?) ORDER BY created_at`, [ids]) : [],
-    ids.length ? q(`SELECT a.ping_id, a.helper_hash, a.eta, a.phone, a.created_at, i.name, i.profession
+    ids.length ? q(`SELECT a.ping_id, a.helper_hash, a.eta, a.phone, a.lat, a.lng, a.pos_at, a.created_at, i.name, i.profession
                     FROM arrivals a LEFT JOIN identities i ON i.hash=a.helper_hash WHERE a.ping_id IN (?)`, [ids]) : [],
     q(`SELECT c.*, p.title AS ping_title, p.owner_hash, ri.name AS requester_name, ri.profession AS requester_prof
        FROM contact_requests c JOIN pings p ON p.id=c.ping_id
        LEFT JOIN identities ri ON ri.hash=c.requester_hash
        WHERE (p.owner_hash=? OR c.requester_hash=?) AND c.created_at > NOW() - INTERVAL ${TTL_H} HOUR`, [req.hash, req.hash]),
     q('SELECT id, label, lat, lng, radius_m FROM zones'),
-    q(`SELECT lat, lng, offer_cats FROM watchers WHERE visible=1 AND lat IS NOT NULL AND updated_at > NOW() - INTERVAL ${TTL_H} HOUR`),
+    q('SELECT COUNT(*) AS n FROM watchers WHERE subscription IS NOT NULL'),
     q("SELECT v FROM stats WHERE k='resolved'"),
     q('SELECT name, profession FROM identities WHERE hash=?', [req.hash]),
     q('SELECT cats, lat, lng, radius_km, visible, offer_cats, subscription IS NOT NULL AS subscribed FROM watchers WHERE hash=?', [req.hash]),
@@ -207,10 +258,17 @@ app.get('/api/state', async (req, res) => {
       at: p.created_at, ownerName: p.owner_name, ownerProf: p.owner_prof,
       mine, iArrive: list.some(a => a.helper_hash === req.hash),
       updates: upd[p.id] || [],
-      arrivals: list.map(a => ({
-        name: a.name, prof: a.profession, eta: a.eta, at: a.created_at,
-        phone: mine ? a.phone : undefined, // le numéro laissé par un dépanneur n'est visible que de l'émetteur
-      })),
+      arrivals: list.map(a => {
+        const self = a.helper_hash === req.hash;
+        return {
+          name: a.name, prof: a.profession, eta: a.eta, at: a.created_at, self,
+          phone: mine ? a.phone : undefined, // le numéro laissé par un dépanneur n'est visible que de l'émetteur
+          // la position d'un dépanneur n'est visible que de l'émetteur (et de lui-même)
+          lat: (mine || self) && a.lat != null ? +a.lat : undefined,
+          lng: (mine || self) && a.lng != null ? +a.lng : undefined,
+          posAt: (mine || self) && a.pos_at ? a.pos_at : undefined,
+        };
+      }),
     };
   });
 
@@ -228,13 +286,13 @@ app.get('/api/state', async (req, res) => {
   res.json({
     pings: out,
     zones: zones.map(z => ({ id: z.id, label: z.label, lat: +z.lat, lng: +z.lng, r: z.radius_m })),
-    halos: halos.map(h => ({ lat: Math.round(h.lat / 0.005) * 0.005, lng: Math.round(h.lng / 0.005) * 0.005, cats: h.offer_cats })),
     officials: officials.map(o => ({ ...o, lat: +o.lat, lng: +o.lng })),
+    fireDate,
     stats: {
       besoins: out.filter(p => p.kind === 'besoin').length,
       collectes: out.filter(p => p.type === 'collecte').length,
       refuges: out.filter(p => p.type === 'refuge').length,
-      veille: halos.length,
+      alerte: alertCount[0]?.n || 0, // dépanneurs abonnés aux notifications
       resolved: statsRow[0]?.v || 0,
     },
     me: { name: meRows[0]?.name || null, prof: meRows[0]?.profession || null, watch: myWatch[0] || null },
@@ -279,7 +337,9 @@ app.post('/api/pings/:id/arrive', limited('act', 120), async (req, res) => {
   }
   const eta = ['~15 min', '~30 min', '~1 h', '~2 h et +'].includes(req.body.eta) ? req.body.eta : null;
   const phone = cleanPhone(req.body.phone);
-  await q('INSERT INTO arrivals (ping_id, helper_hash, eta, phone) VALUES (?,?,?,?)', [p.id, req.hash, eta, phone]);
+  const pos = validHelperPos(req.body.lat, req.body.lng, p);
+  await q('INSERT INTO arrivals (ping_id, helper_hash, eta, phone, lat, lng, pos_at) VALUES (?,?,?,?,?,?,?)',
+    [p.id, req.hash, eta, phone, pos?.lat ?? null, pos?.lng ?? null, pos ? new Date() : null]);
   const who = (await q('SELECT name, profession FROM identities WHERE hash=?', [req.hash]))[0] || {};
   pushTo(p.owner_hash, {
     title: `🚗 ${who.name || 'Quelqu’un'}${who.profession ? ' (se déclare ' + who.profession + ')' : ''} arrive`,
@@ -287,6 +347,27 @@ app.post('/api/pings/:id/arrive', limited('act', 120), async (req, res) => {
     url: `/#p=${p.id}`,
   }).catch(() => {});
   res.json({ arrived: true });
+});
+
+// Position partagée par un dépanneur : bornes géographiques strictes et
+// plausibilité (≤ 300 km du ping) — jamais publique, visible du seul émetteur
+function validHelperPos(lat, lng, ping) {
+  lat = parseFloat(lat); lng = parseFloat(lng);
+  if (!isFinite(lat) || !isFinite(lng) || Math.abs(lat) > 90 || Math.abs(lng) > 180) return null;
+  if (distKm(lat, lng, +ping.lat, +ping.lng) > 300) return null;
+  return { lat, lng };
+}
+
+// Rafraîchir sa position quand on est en route (réservé aux dépanneurs engagés)
+app.post('/api/pings/:id/position', limited('act', 240), async (req, res) => {
+  const p = (await q("SELECT * FROM pings WHERE id=? AND status='open'", [req.params.id]))[0];
+  if (!p) return res.status(404).json({ error: 'Ping introuvable.' });
+  const mine = (await q('SELECT 1 FROM arrivals WHERE ping_id=? AND helper_hash=?', [p.id, req.hash])).length;
+  if (!mine) return res.status(403).json({ error: 'Cliquez d’abord sur « j’arrive ».' });
+  const pos = validHelperPos(req.body.lat, req.body.lng, p);
+  if (!pos) return res.status(400).json({ error: 'Position invalide ou trop éloignée.' });
+  await q('UPDATE arrivals SET lat=?, lng=?, pos_at=NOW() WHERE ping_id=? AND helper_hash=?', [pos.lat, pos.lng, p.id, req.hash]);
+  res.json({ ok: true });
 });
 
 // Clôturer (cookie propriétaire OU code de secours)
@@ -359,11 +440,10 @@ app.post('/api/contact/:reqId/respond', limited('act', 120), async (req, res) =>
 // Vigie / qui-vive : préférences + abonnement push
 app.post('/api/watch', limited('act', 60), async (req, res) => {
   const cats = (Array.isArray(req.body.cats) ? req.body.cats : []).filter(c => ALL_TYPES.includes(c)).join(',');
-  const offerCats = (Array.isArray(req.body.offerCats) ? req.body.offerCats : []).filter(c => TYPES.besoin.includes(c)).join(',');
-  const lat = isFinite(parseFloat(req.body.lat)) ? parseFloat(req.body.lat) : null;
-  const lng = isFinite(parseFloat(req.body.lng)) ? parseFloat(req.body.lng) : null;
+  let lat = parseFloat(req.body.lat), lng = parseFloat(req.body.lng);
+  if (!isFinite(lat) || !isFinite(lng) || Math.abs(lat) > 90 || Math.abs(lng) > 180) { lat = null; lng = null; }
   const radius = Math.min(200, Math.max(1, parseInt(req.body.radiusKm) || 20));
-  const visible = req.body.visible && lat != null ? 1 : 0;
+  const visible = 0; // feature « halo public » retirée — la position ne sert qu'au filtre d'alertes
   let sub = null;
   if (req.body.subscription && req.body.subscription.endpoint) sub = JSON.stringify(req.body.subscription).slice(0, 4000);
   await q(`INSERT INTO watchers (hash, subscription, cats, lat, lng, radius_km, visible, offer_cats)
@@ -501,6 +581,8 @@ init().then(() => {
   cleanup();
   doImport();
   setInterval(doImport, 6 * 3600000).unref();
+  refreshFireDate().then(() => console.log(`Couche feux : données NASA du ${fireDate}`));
+  setInterval(refreshFireDate, 1800000).unref();
   const port = Number(process.env.PORT) || 3000;
   app.listen(port, () => {
     console.log(`Entraide Feu sur le port ${port}`);

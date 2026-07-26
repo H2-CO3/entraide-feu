@@ -13,7 +13,7 @@ const TYPE_META = {
 const PROF_LABEL = { pompier: 'se déclare pompier 🚒', policier: 'se déclare policier 👮', soignant: 'se déclare soignant ⚕️' };
 
 let map, state = null, filter = 'all';
-let markers = new Map(), haloLayers = [], zoneLayers = [], officialLayers = [], cluster = null;
+let markers = new Map(), carLayers = [], zoneLayers = [], officialLayers = [], cluster = null;
 let fireLayers = [], fireOn = true;
 let placing = null;      // { draft, marker } pendant le placement
 let recBlob = null, recMime = null, mediaRec = null;
@@ -49,6 +49,15 @@ function distKm(a, b, c, d) {
   const h = Math.sin(r(c - a) / 2) ** 2 + Math.cos(r(a)) * Math.cos(r(c)) * Math.sin(r(d - b) / 2) ** 2;
   return 2 * R * Math.asin(Math.sqrt(h));
 }
+// géolocalisation en une promesse, null si refus/échec — jamais bloquant
+function getPosition() {
+  return new Promise(r => navigator.geolocation
+    ? navigator.geolocation.getCurrentPosition(
+        p => r({ lat: p.coords.latitude, lng: p.coords.longitude }),
+        () => r(null), { timeout: 6000, maximumAge: 30000 })
+    : r(null));
+}
+
 function inDangerZone(lat, lng) {
   if (!state) return null;
   return state.zones.find(z => distKm(lat, lng, z.lat, z.lng) * 1000 <= z.r) || null;
@@ -69,17 +78,14 @@ function initMap() {
     maxZoom: 19, attribution: '© OpenStreetMap',
   }).addTo(map);
 
-  // Points chauds satellites NASA (GIBS, sans clé) — UNE seule couche, tuiles 512,
-  // pas de sur-requête au zoom : léger pour les mobiles
-  const day = new Date().toISOString().slice(0, 10);
+  // Points chauds satellites : servis par NOTRE serveur (proxy + cache), qui
+  // choisit la dernière date NASA réellement disponible — fiable et léger
   fireLayers = [
-    L.tileLayer.wms('https://gibs.earthdata.nasa.gov/wms/epsg3857/best/wms.cgi', {
-      layers: 'VIIRS_SNPP_Thermal_Anomalies_375m_All,VIIRS_NOAA20_Thermal_Anomalies_375m_All,MODIS_Terra_Thermal_Anomalies_All',
-      format: 'image/png', transparent: true, time: day,
+    L.tileLayer.wms('/fires/wms', {
+      layers: 'fires', format: 'image/png', transparent: true,
       tileSize: 512, maxNativeZoom: 11, opacity: .8, updateWhenIdle: true,
     }),
   ];
-  const fd = $('#fireDate'); if (fd) fd.textContent = day;
   setFireLayer(true);
 
   cluster = L.markerClusterGroup({ maxClusterRadius: 45, showCoverageOnHover: false });
@@ -108,7 +114,8 @@ function render() {
   if (!state) return;
   // stats
   const s = state.stats;
-  $('#statsline').textContent = `${s.besoins} besoins · ${s.collectes} collectes · ${s.refuges} refuges · ${s.veille} en veille · ✅ ${s.resolved} résolus`;
+  $('#statsline').textContent = `${s.besoins} besoins · ${s.collectes} collectes · ${s.refuges} refuges · 🔔 ${s.alerte} en alerte · ✅ ${s.resolved} résolus`;
+  const fd = $('#fireDate'); if (fd && state.fireDate) fd.textContent = state.fireDate;
 
   // marqueurs
   const keep = new Set();
@@ -129,11 +136,16 @@ function render() {
   for (const [id, m] of markers) if (!keep.has(id)) { cluster.removeLayer(m); markers.delete(id); }
   cluster.refreshClusters();
 
-  // halos des dépanneurs actifs — visibles sur « Tout » et sur le filtre Assistance
-  haloLayers.forEach(l => l.remove());
-  haloLayers = (filter === 'besoin') ? [] : state.halos.map(h =>
-    L.circle([h.lat, h.lng], { radius: 500, color: '#2e9e5b', weight: 2, fillOpacity: .2 })
-      .addTo(map).bindTooltip('🟢 Dépanneur actif' + (h.cats ? ' — ' + h.cats.split(',').map(c => TYPE_META[c]?.label || c).join(', ') : '')));
+  // dépanneurs en route vers MES fiches : 🚗 visibles de moi seul (émetteur)
+  carLayers.forEach(l => l.remove());
+  carLayers = [];
+  for (const p of state.pings.filter(p => p.mine)) {
+    for (const a of p.arrivals.filter(a => a.lat != null && !a.self)) {
+      carLayers.push(L.marker([a.lat, a.lng], {
+        icon: L.divIcon({ className: '', html: '<div class="pin">🚗</div>', iconSize: [28, 28], iconAnchor: [14, 14] }),
+      }).addTo(map).bindTooltip(`🚗 ${a.name || 'Dépanneur'} → « ${p.title.slice(0, 30)} »${a.posAt ? ' · position ' + timeAgo(a.posAt) : ''}`));
+    }
+  }
 
   // points officiels (préfecture / mairies) — non clusterisés, toujours visibles
   const O_EMOJI = { refuge: '🏠', collecte: '📥', info: 'ℹ️' };
@@ -164,7 +176,7 @@ function render() {
 function renderMainButtons() {
   const myNeed = state.pings.find(p => p.mine && p.kind === 'besoin');
   const w = state.me?.watch;
-  const helperActive = !!(w && (w.cats || w.visible || w.subscribed));
+  const helperActive = !!(w && (w.cats || w.subscribed));
   const bNeed = $('#btnNeed'), bHelp = $('#btnHelp');
   if (myNeed) {
     bNeed.innerHTML = '📋 Ma demande <span class="muted">(suivi)</span>';
@@ -304,8 +316,17 @@ function renderSheet(id, soft) {
       try { await api(`/api/pings/${p.id}/close`, { json: {} }); toast('Fiche clôturée ✅'); closeSheet(); poll(); } catch (e) { toast(e.message, true); }
     };
   } else if (p.iArrive) {
-    act.innerHTML = `<div class="row"><button class="btn ghost" id="fCancelArr">🚫 Je ne peux plus venir</button></div>
+    const me = p.arrivals.find(a => a.self);
+    act.innerHTML = `
+      ${me?.posAt ? `<p class="small muted">📍 Position partagée avec l'émetteur ${timeAgo(me.posAt)}</p>` : ''}
+      <div class="row"><button class="btn" id="fRefreshPos">📍 Actualiser ma position</button></div>
+      <div class="row"><button class="btn ghost" id="fCancelArr">🚫 Je ne peux plus venir</button></div>
       <div class="row"><button class="btn ghost" id="fShare">📤 Partager</button><button class="btn ghost" id="fReport">⚠️ Signaler</button></div>`;
+    $('#fRefreshPos').onclick = async () => {
+      const pos = await getPosition();
+      if (!pos) return toast('Position GPS indisponible', true);
+      try { await api(`/api/pings/${p.id}/position`, { json: pos }); toast('Position mise à jour 📍'); poll(); } catch (e) { toast(e.message, true); }
+    };
     $('#fCancelArr').onclick = async () => {
       try { await api(`/api/pings/${p.id}/arrive`, { json: { cancel: true } }); toast('Prise en charge annulée'); poll(); } catch (e) { toast(e.message, true); }
     };
@@ -318,6 +339,7 @@ function renderSheet(id, soft) {
           <button class="chip" data-v="~1 h">~1 h</button><button class="chip" data-v="~2 h et +">~2 h et +</button>
         </div>
         <input type="tel" id="arrPhone" placeholder="Mon numéro pour l'émetteur (facultatif)" autocomplete="tel">
+        <p class="small muted">📍 Votre position sera partagée avec l'émetteur (et lui seul) pour qu'il vous voie arriver.</p>
         <button class="btn" id="arrGo">✅ Confirmer : j'arrive</button>
       </div>
       <button class="btn help" id="fArrive">🚗 J'arrive</button>
@@ -335,8 +357,9 @@ function renderSheet(id, soft) {
       </div>`;
     $('#fArrive').onclick = () => { $('#arrForm').classList.remove('hidden'); $('#fArrive').classList.add('hidden'); chipsToggle($('#arrEta'), false); };
     $('#arrGo').onclick = async () => {
+      const pos = await getPosition();
       try {
-        await api(`/api/pings/${p.id}/arrive`, { json: { eta: chipsValues($('#arrEta'))[0], phone: $('#arrPhone').value.trim() } });
+        await api(`/api/pings/${p.id}/arrive`, { json: { eta: chipsValues($('#arrEta'))[0], phone: $('#arrPhone').value.trim(), lat: pos?.lat, lng: pos?.lng } });
         toast('C’est noté, vous êtes attendu 💪'); askNotifPermission(); poll();
       } catch (e) { toast(e.message, true); }
     };
@@ -525,8 +548,7 @@ function currentWatchPrefs() {
   const w = state?.me?.watch;
   return {
     cats: w ? w.cats.split(',').filter(Boolean) : [],
-    offerCats: w ? w.offer_cats.split(',').filter(Boolean) : [],
-    lat: w?.lat, lng: w?.lng, radiusKm: w?.radius_km || 20, visible: !!w?.visible,
+    lat: w?.lat, lng: w?.lng, radiusKm: w?.radius_km || 20,
   };
 }
 
@@ -543,7 +565,6 @@ function setupHelp() {
       $('#helpOffres').querySelectorAll('.chip').forEach(c => c.classList.toggle('on', watched.includes(c.dataset.v)));
       $('#helpRadius').value = w.radius_km; $('#helpRadiusVal').textContent = w.radius_km + ' km';
       $('#helpNotif').checked = !!w.subscribed;
-      $('#helpVisible').checked = !!w.visible;
     }
     $('#helpIosHint').hidden = !isIosNoPush();
     panel.classList.remove('hidden');
@@ -560,16 +581,13 @@ function setupHelp() {
   };
   $('#helpSave').onclick = async () => {
     const cats = [...chipsValues($('#helpCats')), ...chipsValues($('#helpOffres'))];
-    const visible = $('#helpVisible').checked;
+    if (!cats.length) return toast('Cochez au moins une catégorie à surveiller', true);
     const wantNotif = $('#helpNotif').checked;
+    // la position ne sert qu'à filtrer les alertes dans le rayon choisi
     let pos = { lat: state?.me?.watch?.lat, lng: state?.me?.watch?.lng };
-    if (visible || wantNotif) {
-      const got = await new Promise(r => navigator.geolocation
-        ? navigator.geolocation.getCurrentPosition(p => r({ lat: p.coords.latitude, lng: p.coords.longitude }), () => r(null), { timeout: 6000 })
-        : r(null));
-      if (got) pos = got;
-      else if (pos.lat == null) { const c = map.getCenter(); pos = { lat: c.lat, lng: c.lng }; toast('Position GPS indisponible — centre de la carte utilisé'); }
-    }
+    const got = await getPosition();
+    if (got) pos = got;
+    else if (pos.lat == null) { const c = map.getCenter(); pos = { lat: c.lat, lng: c.lng }; toast('Position GPS indisponible — centre de la carte utilisé'); }
     let sub = null;
     if (wantNotif) {
       sub = await subscribePush();
@@ -578,14 +596,9 @@ function setupHelp() {
     }
     try {
       await api('/api/watch', {
-        json: {
-          cats, offerCats: chipsValues($('#helpCats')),
-          lat: pos.lat, lng: pos.lng,
-          radiusKm: +$('#helpRadius').value, visible,
-          subscription: sub || undefined,
-        },
+        json: { cats, lat: pos.lat, lng: pos.lng, radiusKm: +$('#helpRadius').value, subscription: sub || undefined },
       });
-      toast('Préférences enregistrées 💪');
+      toast('Alertes configurées 🔔');
       panel.classList.add('hidden');
       poll();
     } catch (e) { toast(e.message, true); }

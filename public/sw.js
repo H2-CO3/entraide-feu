@@ -1,5 +1,5 @@
 /* Entraide Feu — service worker : cache hors-ligne + notifications push */
-const CACHE = 'ef-v2';
+const CACHE = 'ef-v3';
 const SHELL = ['/', '/app.js', '/style.css', '/icon.svg',
   '/vendor/leaflet/leaflet.js', '/vendor/leaflet/leaflet.css',
   '/vendor/markercluster/leaflet.markercluster.js', '/vendor/markercluster/MarkerCluster.css', '/vendor/markercluster/MarkerCluster.Default.css'];
@@ -14,7 +14,8 @@ self.addEventListener('activate', e => {
 self.addEventListener('fetch', e => {
   const url = new URL(e.request.url);
   if (e.request.method !== 'GET' || url.origin !== location.origin) return;
-  if (url.pathname.startsWith('/api/')) return; // jamais de cache sur l'API
+  if (url.pathname.startsWith('/api/')) return;   // jamais de cache sur l'API
+  if (url.pathname.startsWith('/fires/')) return; // tuiles feux : cache HTTP navigateur uniquement (sinon le cache SW gonfle)
   // réseau d'abord (pages fraîches), cache en secours (mode dégradé hors-ligne)
   e.respondWith(
     fetch(e.request).then(r => {

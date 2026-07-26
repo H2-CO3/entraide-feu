@@ -42,9 +42,16 @@ CREATE TABLE IF NOT EXISTS arrivals (
   helper_hash CHAR(64) NOT NULL,
   eta         VARCHAR(20) DEFAULT NULL,
   phone       VARCHAR(25) DEFAULT NULL,
+  lat         DECIMAL(9,6) DEFAULT NULL,  -- position partagée par le dépanneur,
+  lng         DECIMAL(9,6) DEFAULT NULL,  -- visible du seul émetteur du ping
+  pos_at      TIMESTAMP NULL DEFAULT NULL,
   created_at  TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP,
   PRIMARY KEY (ping_id, helper_hash)
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;
+
+ALTER TABLE arrivals ADD COLUMN IF NOT EXISTS lat DECIMAL(9,6) DEFAULT NULL;
+ALTER TABLE arrivals ADD COLUMN IF NOT EXISTS lng DECIMAL(9,6) DEFAULT NULL;
+ALTER TABLE arrivals ADD COLUMN IF NOT EXISTS pos_at TIMESTAMP NULL DEFAULT NULL;
 
 CREATE TABLE IF NOT EXISTS reports (
   ping_id       CHAR(10) NOT NULL,

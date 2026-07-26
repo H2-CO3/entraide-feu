@@ -16,9 +16,13 @@ géolocalisés sur une carte publique. Sans compte, sans friction — un cookie 
 - Modération : bouton signaler (masquage à 3 signalements), page admin (suppression, bannissement,
   zones de danger affichées sur la carte).
 - **Couche feux satellites** : anomalies thermiques NASA (GIBS/VIIRS/MODIS, sans clé d'API),
-  aujourd'hui + veille estompée, horodatée dans l'attribution — indicative, latence de plusieurs heures.
-- **Points officiels** (🏛️ hébergements, collectes préfectorales) : gérés depuis la page admin,
-  sans expiration, affichés hors clustering avec source et itinéraire.
+  servie par un proxy local avec cache qui sélectionne la dernière date réellement publiée.
+- **Points officiels** (🏛️ hébergements, collectes préfectorales) : synchronisés automatiquement
+  depuis alertesfeux.fr toutes les 6 h (+ saisie manuelle admin), sans expiration, hors clustering.
+- **Position des dépanneurs** : partagée uniquement au « j'arrive », visible du seul émetteur,
+  rafraîchissable en route (🚗 sur la carte de l'émetteur).
+
+Architecture détaillée et invariants de sécurité : voir [ARCHITECTURE.md](ARCHITECTURE.md).
 
 ⚠️ Cet outil ne se substitue pas aux secours. Urgence vitale : **18 / 112**.
 

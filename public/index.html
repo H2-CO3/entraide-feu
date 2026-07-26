@@ -139,8 +139,8 @@
 <!-- ============ PANNEAU JE DÉPANNE ============ -->
 <div id="helpPanel" class="overlay hidden">
   <div class="modal">
-    <h2>💪 Je dépanne</h2>
-    <p class="small muted">Ce que vous pouvez proposer :</p>
+    <h2>💪 Je dépanne — mes alertes</h2>
+    <p class="small muted">Recevez une alerte quand un besoin correspondant apparaît dans votre périmètre :</p>
     <div class="chips" id="helpCats">
       <button class="chip" data-v="humain">🙋 Bras / véhicule</button>
       <button class="chip" data-v="materiel">📦 Matériel</button>
@@ -154,8 +154,9 @@
     <label class="rangeLabel">Rayon d'alerte : <b id="helpRadiusVal">20 km</b>
       <input type="range" id="helpRadius" min="2" max="100" value="20">
     </label>
-    <label class="switch"><input type="checkbox" id="helpNotif"> 🔔 Recevoir les alertes (notifications)</label>
-    <label class="switch"><input type="checkbox" id="helpVisible"> 🟢 <b>Actif</b> : visible sur la carte pour être contacté <span class="muted small">(position floutée à ~500&nbsp;m)</span></label>
+    <label class="switch"><input type="checkbox" id="helpNotif" checked> 🔔 Recevoir les notifications</label>
+    <p class="small muted">Votre position ne sert qu'à filtrer les alertes — elle n'est jamais affichée publiquement.
+    Elle n'est partagée qu'avec un émetteur précis, au moment où vous cliquez «&nbsp;j'arrive&nbsp;» sur sa fiche.</p>
     <p class="small muted" id="helpIosHint" hidden>📱 Sur iPhone : ajoutez d'abord le site à l'écran d'accueil (Partager → Sur l'écran d'accueil) pour recevoir les notifications.</p>
     <div class="row">
       <button class="btn ghost small-btn" id="helpOffer">➕ Déclarer collecte / refuge</button>
@@ -188,7 +189,7 @@
       <li>🙋 📦 ⚕️ — <b>Besoins</b> émis par les habitants et les équipes sur place</li>
       <li>📥 🏠 — <b>Assistance</b> citoyenne : points de collecte, refuges</li>
       <li><span class="offpin-mini">🏠</span> — <b>Point officiel</b> (préfecture, mairie) : hébergement, collecte, animaux</li>
-      <li><span class="halo-mini"></span> — Dépanneur <b>actif</b>, contactable (position floutée à ~500 m)</li>
+      <li>🚗 — Dépanneur en route vers l'une de <b>vos</b> fiches (visible de vous seul)</li>
       <li><span class="fire-mini"></span> — Détections satellites NASA du <b id="fireDate"></b> (latence de plusieurs heures — indicatif)</li>
       <li><span class="zone-mini"></span> — Zone de danger / évacuée</li>
       <li><span class="cluster-mini">5</span> — Plusieurs fiches regroupées : zoomez ou touchez</li>
