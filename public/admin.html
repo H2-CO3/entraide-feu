@@ -25,6 +25,22 @@
 <div id="content" hidden>
   <h2>🚨 Fiches signalées</h2><div id="flagged"></div>
   <h2>📋 Toutes les fiches (72 h)</h2><div id="all"></div>
+  <h2>🏛️ Points officiels (hébergement, collecte)</h2>
+  <div class="card">
+    <select id="oType" style="background:#1a1f2c;color:#eef0f4;border:1px solid #3a4152;border-radius:8px;padding:.5rem">
+      <option value="refuge">🏠 Refuge / hébergement</option>
+      <option value="collecte">📥 Point de collecte</option>
+      <option value="info">ℹ️ Point d'information</option>
+    </select>
+    <input id="oLabel" placeholder="Nom (ex : Parc des Expositions)">
+    <input id="oDetail" placeholder="Détail (capacité, consignes…)" size="40">
+    <input id="oLat" placeholder="Latitude" size="10"> <input id="oLng" placeholder="Longitude" size="10">
+    <input id="oSource" placeholder="Source (ex : Préfecture 33, 26/07)" size="24">
+    <button class="ok" onclick="addOfficial()">Ajouter</button>
+    <p class="muted small">Sans expiration — pensez à retirer les points fermés. Les emplacements changent vite en crise.</p>
+  </div>
+  <div id="officials"></div>
+
   <h2>⚠️ Zones de danger</h2>
   <div class="card">
     <input id="zLabel" placeholder="Libellé (ex : Zone évacuée Saumos)">
@@ -64,6 +80,10 @@ async function load(){
     const flagged = d.pings.filter(p => p.reports > 0 || p.hidden);
     document.getElementById('flagged').innerHTML = flagged.map(p => pingCard(p, true)).join('') || '<p class="muted">Rien à signaler 👌</p>';
     document.getElementById('all').innerHTML = d.pings.map(p => pingCard(p)).join('') || '<p class="muted">Aucune fiche.</p>';
+    document.getElementById('officials').innerHTML = (d.officials || []).map(o =>
+      `<div class="card">🏛️ <b>${esc(o.label)}</b> [${o.type}] — ${o.lat}, ${o.lng}
+       ${o.detail ? '<br><span class="muted small">' + esc(o.detail) + '</span>' : ''}
+       <button class="del" onclick="delOfficial(${o.id})">Retirer</button></div>`).join('') || '<p class="muted">Aucun point officiel.</p>';
     document.getElementById('zones').innerHTML = d.zones.map(z =>
       `<div class="card">⚠️ <b>${esc(z.label)}</b> — ${z.lat}, ${z.lng} · r=${z.radius_m} m
        <button class="del" onclick="delZone(${z.id})">Retirer</button></div>`).join('') || '<p class="muted">Aucune zone.</p>';
@@ -77,6 +97,11 @@ async function addZone(){
   load();
 }
 async function delZone(id){ await api('/api/admin/zone-delete',{id}); load(); }
+async function addOfficial(){
+  await api('/api/admin/official',{ type: oType.value, label: oLabel.value, detail: oDetail.value, lat: +oLat.value, lng: +oLng.value, source: oSource.value }).catch(e=>alert(e.message));
+  load();
+}
+async function delOfficial(id){ await api('/api/admin/official-delete',{id}); load(); }
 if (KEY) load();
 </script>
 </body>

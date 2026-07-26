@@ -150,7 +150,7 @@ app.get('/api/state', async (req, res) => {
     WHERE p.hidden = 0 AND p.status = 'open' AND p.created_at > NOW() - INTERVAL ${TTL_H} HOUR
     ORDER BY p.created_at DESC LIMIT 500`);
   const ids = pings.map(p => p.id);
-  const [updates, arrivals, myReqs, zones, halos, statsRow, meRows, myWatch, myExpired] = await Promise.all([
+  const [updates, arrivals, myReqs, zones, halos, statsRow, meRows, myWatch, myExpired, officials] = await Promise.all([
     ids.length ? q(`SELECT ping_id, text, created_at FROM ping_updates WHERE ping_id IN (?) ORDER BY created_at`, [ids]) : [],
     ids.length ? q(`SELECT a.ping_id, a.helper_hash, a.eta, a.phone, a.created_at, i.name, i.profession
                     FROM arrivals a LEFT JOIN identities i ON i.hash=a.helper_hash WHERE a.ping_id IN (?)`, [ids]) : [],
@@ -165,6 +165,7 @@ app.get('/api/state', async (req, res) => {
     q('SELECT cats, lat, lng, radius_km, visible, offer_cats, subscription IS NOT NULL AS subscribed FROM watchers WHERE hash=?', [req.hash]),
     q(`SELECT id, kind, type, title, message, private_message, lat, lng FROM pings
        WHERE owner_hash=? AND created_at <= NOW() - INTERVAL ${TTL_H} HOUR AND created_at > NOW() - INTERVAL ${PURGE_H} HOUR`, [req.hash]),
+    q('SELECT id, type, label, detail, lat, lng, source FROM official_points'),
   ]);
 
   const upd = {}, arr = {};
@@ -206,6 +207,7 @@ app.get('/api/state', async (req, res) => {
     pings: out,
     zones: zones.map(z => ({ id: z.id, label: z.label, lat: +z.lat, lng: +z.lng, r: z.radius_m })),
     halos: halos.map(h => ({ lat: Math.round(h.lat / 0.005) * 0.005, lng: Math.round(h.lng / 0.005) * 0.005, cats: h.offer_cats })),
+    officials: officials.map(o => ({ ...o, lat: +o.lat, lng: +o.lng })),
     stats: {
       besoins: out.filter(p => p.kind === 'besoin').length,
       collectes: out.filter(p => p.type === 'collecte').length,
@@ -363,7 +365,8 @@ app.get('/api/admin/overview', adminOnly, async (req, res) => {
     WHERE p.created_at > NOW() - INTERVAL ${PURGE_H} HOUR
     ORDER BY reports DESC, p.created_at DESC LIMIT 300`);
   const zones = await q('SELECT * FROM zones');
-  res.json({ pings, zones });
+  const officials = await q('SELECT * FROM official_points ORDER BY created_at DESC');
+  res.json({ pings, zones, officials });
 });
 app.post('/api/admin/delete', adminOnly, async (req, res) => {
   const p = (await q('SELECT * FROM pings WHERE id=?', [req.body.id]))[0];
@@ -387,6 +390,18 @@ app.post('/api/admin/zone', adminOnly, async (req, res) => {
 });
 app.post('/api/admin/zone-delete', adminOnly, async (req, res) => {
   await q('DELETE FROM zones WHERE id=?', [+req.body.id]);
+  res.json({ ok: true });
+});
+app.post('/api/admin/official', adminOnly, async (req, res) => {
+  const { type, label, detail, lat, lng, source } = req.body;
+  if (!['refuge', 'collecte', 'info'].includes(type) || !label || !isFinite(+lat) || !isFinite(+lng))
+    return res.status(400).json({ error: 'Point officiel invalide.' });
+  await q('INSERT INTO official_points (type, label, detail, lat, lng, source) VALUES (?,?,?,?,?,?)',
+    [type, String(label).slice(0, 100), String(detail || '').slice(0, 300) || null, +lat, +lng, String(source || '').slice(0, 120) || null]);
+  res.json({ ok: true });
+});
+app.post('/api/admin/official-delete', adminOnly, async (req, res) => {
+  await q('DELETE FROM official_points WHERE id=?', [+req.body.id]);
   res.json({ ok: true });
 });
 

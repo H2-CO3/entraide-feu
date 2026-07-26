@@ -17,10 +17,11 @@ a { color: #7ab8ff; }
 .leaflet-container { font: inherit; }
 
 /* ---- topbar ---- */
-#topbar { padding: .5rem .75rem .4rem; background: #1a1d24; z-index: 500; }
-#topbar .row1 { display: flex; justify-content: space-between; align-items: baseline; gap: .5rem; flex-wrap: wrap; }
-.logo { font-weight: 800; font-size: 1.05rem; }
-#statsline { text-align: right; }
+#topbar { padding: .5rem .75rem .45rem; background: #1a1d24; z-index: 500; }
+#topbar .row1 { display: flex; justify-content: space-between; align-items: center; gap: .5rem; }
+.logo { font-weight: 800; font-size: 1.1rem; }
+#statsline { margin-top: .2rem; }
+#topbar .chips { margin: .45rem 0 0; }
 
 /* ---- chips ---- */
 .chips { display: flex; gap: .4rem; flex-wrap: wrap; margin: .45rem 0; }
@@ -112,9 +113,28 @@ input[type=text], input[type=tel], textarea {
 
 /* ---- footer ---- */
 #footer {
-  display: flex; justify-content: space-between; padding: .45rem .75rem;
-  font-size: .82rem; background: #14161c; z-index: 500; flex-wrap: wrap; gap: .3rem;
+  display: flex; justify-content: space-between; align-items: center; padding: .65rem .8rem;
+  font-size: .95rem; background: #14161c; z-index: 500; flex-wrap: wrap; gap: .4rem;
 }
+#footer a { font-weight: 600; }
+
+/* attribution Leaflet : en haut à droite, discrète, hors des boutons */
+.leaflet-control-attribution {
+  background: rgba(20, 22, 28, .7) !important; color: #9aa3b2 !important;
+  font-size: .68rem !important; border-radius: 0 0 0 8px;
+}
+.leaflet-control-attribution a { color: #7ab8ff !important; }
+
+/* ---- points officiels ---- */
+.offpin {
+  width: 34px; height: 34px; border-radius: 50%;
+  background: #294a6e; border: 2px solid #7ab8ff;
+  display: flex; align-items: center; justify-content: center;
+  font-size: 1.05rem; box-shadow: 0 2px 8px rgba(0,0,0,.5);
+}
+.leaflet-popup-content-wrapper { background: #232838; color: #eef0f4; border-radius: 12px; }
+.leaflet-popup-tip { background: #232838; }
+.leaflet-popup-content a { color: #7ab8ff; }
 
 /* ---- toasts ---- */
 #toasts { position: fixed; top: .6rem; left: 50%; transform: translateX(-50%); z-index: 2000; width: min(92vw, 420px); }

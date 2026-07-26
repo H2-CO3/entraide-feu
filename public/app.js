@@ -13,7 +13,8 @@ const TYPE_META = {
 const PROF_LABEL = { pompier: 'se déclare pompier 🚒', policier: 'se déclare policier 👮', soignant: 'se déclare soignant ⚕️' };
 
 let map, state = null, filter = 'all';
-let markers = new Map(), haloLayers = [], zoneLayers = [], cluster = null;
+let markers = new Map(), haloLayers = [], zoneLayers = [], officialLayers = [], cluster = null;
+let fireLayers = [], fireOn = true;
 let placing = null;      // { draft, marker } pendant le placement
 let recBlob = null, recMime = null, mediaRec = null;
 let photoBlob = null;
@@ -62,15 +63,37 @@ const chipsValues = container => [...container.querySelectorAll('.chip.on')].map
 
 /* ---------- carte ---------- */
 function initMap() {
-  map = L.map('map', { zoomControl: false }).setView([44.8, -0.9], 9); // Gironde
+  map = L.map('map', { zoomControl: false, attributionControl: false }).setView([44.8, -0.9], 9); // Gironde
+  L.control.attribution({ position: 'topright', prefix: false }).addTo(map);
   L.tileLayer('https://tile.openstreetmap.org/{z}/{x}/{y}.png', {
     maxZoom: 19, attribution: '© OpenStreetMap',
   }).addTo(map);
+
+  // Points chauds satellites NASA (GIBS, sans clé) : aujourd'hui net + hier estompé
+  const GIBS = 'https://gibs.earthdata.nasa.gov/wms/epsg3857/best/wms.cgi';
+  const FIRE_WMS = 'VIIRS_SNPP_Thermal_Anomalies_375m_All,VIIRS_NOAA20_Thermal_Anomalies_375m_All,MODIS_Terra_Thermal_Anomalies_All,MODIS_Aqua_Thermal_Anomalies_All';
+  const day = d => new Date(Date.now() - d * 86400000).toISOString().slice(0, 10);
+  fireLayers = [
+    L.tileLayer.wms(GIBS, { layers: FIRE_WMS, format: 'image/png', transparent: true, time: day(1), opacity: .3 }),
+    L.tileLayer.wms(GIBS, { layers: FIRE_WMS, format: 'image/png', transparent: true, time: day(0), opacity: .85, attribution: `🛰️ Feux : NASA GIBS (${day(0)})` }),
+  ];
+  setFireLayer(true);
+
   cluster = L.markerClusterGroup({ maxClusterRadius: 45, showCoverageOnHover: false });
   map.addLayer(cluster);
   navigator.geolocation?.getCurrentPosition(p => {
     if (!openPingId) map.setView([p.coords.latitude, p.coords.longitude], 12);
   }, () => {}, { timeout: 5000 });
+}
+
+function setFireLayer(on) {
+  fireOn = on;
+  fireLayers.forEach(l => on ? l.addTo(map) : l.remove());
+  $('#fireToggle')?.classList.toggle('on', on);
+  if (on && !sessionStorage.getItem('fireCaveat')) {
+    sessionStorage.setItem('fireCaveat', '1');
+    toast('🛰️ Points chauds satellites NASA — indicatifs, latence de plusieurs heures. Ne vous y fiez pas pour votre sécurité.');
+  }
 }
 
 function render() {
@@ -103,6 +126,17 @@ function render() {
   haloLayers = state.halos.map(h =>
     L.circle([h.lat, h.lng], { radius: 500, color: '#2e9e5b', weight: 1, fillOpacity: .15 })
       .addTo(map).bindTooltip('💪 Dépanneur en veille' + (h.cats ? ' — ' + h.cats.split(',').map(c => TYPE_META[c]?.label || c).join(', ') : '')));
+
+  // points officiels (préfecture / mairies) — non clusterisés, toujours visibles
+  const O_EMOJI = { refuge: '🏠', collecte: '📥', info: 'ℹ️' };
+  officialLayers.forEach(l => l.remove());
+  officialLayers = state.officials.map(o =>
+    L.marker([o.lat, o.lng], {
+      icon: L.divIcon({ className: '', html: `<div class="offpin">${O_EMOJI[o.type] || 'ℹ️'}</div>`, iconSize: [34, 34], iconAnchor: [17, 17] }),
+    }).addTo(map).bindPopup(
+      `<b>🏛️ ${esc(o.label)}</b><br>${o.detail ? esc(o.detail) + '<br>' : ''}` +
+      `${o.source ? `<span style="opacity:.7;font-size:.8em">Source : ${esc(o.source)}</span><br>` : ''}` +
+      `<a href="https://www.google.com/maps/dir/?api=1&destination=${o.lat},${o.lng}" target="_blank" rel="noopener">🧭 Itinéraire</a>`));
 
   // zones de danger
   zoneLayers.forEach(l => l.remove());
@@ -555,11 +589,11 @@ function setupOnboarding() {
 
 /* ---------- init ---------- */
 function setupUI() {
-  $('#filters .chip').onclick = null;
-  $('#filters').querySelectorAll('.chip').forEach(ch => ch.onclick = () => {
-    $('#filters').querySelectorAll('.chip').forEach(o => o.classList.remove('on'));
+  $('#filters').querySelectorAll('.chip[data-f]').forEach(ch => ch.onclick = () => {
+    $('#filters').querySelectorAll('.chip[data-f]').forEach(o => o.classList.remove('on'));
     ch.classList.add('on'); filter = ch.dataset.f; render();
   });
+  $('#fireToggle').onclick = () => setFireLayer(!fireOn);
   $('#sheetClose').onclick = closeSheet;
   $('#placeCancel').onclick = stopPlacing;
   $('#placeOk').onclick = submitPing;

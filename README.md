@@ -15,6 +15,10 @@ géolocalisés sur une carte publique. Sans compte, sans friction — un cookie 
   affiche un halo flouté (~500 m) rassurant sur la carte.
 - Modération : bouton signaler (masquage à 3 signalements), page admin (suppression, bannissement,
   zones de danger affichées sur la carte).
+- **Couche feux satellites** : anomalies thermiques NASA (GIBS/VIIRS/MODIS, sans clé d'API),
+  aujourd'hui + veille estompée, horodatée dans l'attribution — indicative, latence de plusieurs heures.
+- **Points officiels** (🏛️ hébergements, collectes préfectorales) : gérés depuis la page admin,
+  sans expiration, affichés hors clustering avec source et itinéraire.
 
 ⚠️ Cet outil ne se substitue pas aux secours. Urgence vitale : **18 / 112**.
 
