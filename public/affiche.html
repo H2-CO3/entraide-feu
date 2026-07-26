@@ -1,0 +1,28 @@
+<!doctype html>
+<html lang="fr">
+<head>
+<meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Affiche — Entraide Feu</title>
+<style>
+  body { font-family: system-ui, sans-serif; margin: 0; padding: 2rem; text-align: center; color: #111; }
+  h1 { font-size: 2.6rem; margin: .5rem 0; }
+  .sub { font-size: 1.3rem; margin: .5rem 0 1.2rem; }
+  img { width: min(70vw, 340px); }
+  .url { font-size: 1.4rem; font-weight: 700; margin-top: 1rem; }
+  .foot { margin-top: 1.5rem; font-size: 1rem; color: #444; }
+  .noprint { position: fixed; top: .8rem; right: .8rem; }
+  @media print { .noprint { display: none; } }
+</style>
+</head>
+<body>
+<button class="noprint" onclick="print()">🖨️ Imprimer</button>
+<h1>🔥 ENTRAIDE FEU</h1>
+<p class="sub"><b>Besoin d'aide&nbsp;? Un coup de main à donner&nbsp;?</b><br>
+Besoins urgents, points de collecte et refuges,<br>sur une carte, en temps réel. Sans compte.</p>
+<img src="/qr.svg" alt="QR code vers la carte">
+<p class="url" id="url"></p>
+<p class="foot">⚠️ Urgence vitale : appelez le <b>18</b> ou le <b>112</b>.<br>
+N'allez jamais en zone dangereuse ou évacuée.</p>
+<script>document.getElementById('url').textContent = location.origin;</script>
+</body>
+</html>

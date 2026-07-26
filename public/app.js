@@ -1,0 +1,556 @@
+/* Entraide Feu — client */
+'use strict';
+
+const $ = s => document.querySelector(s);
+const esc = s => String(s ?? '').replace(/[&<>"']/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
+const TYPE_META = {
+  humain:   { emoji: '🙋', label: 'Bras / véhicule', color: '#d64541' },
+  materiel: { emoji: '📦', label: 'Matériel',        color: '#e07b39' },
+  medical:  { emoji: '⚕️', label: 'Médical',         color: '#c23b6e' },
+  collecte: { emoji: '📥', label: 'Point de collecte', color: '#2e9e5b' },
+  refuge:   { emoji: '🏠', label: 'Refuge',          color: '#2f6fed' },
+};
+const PROF_LABEL = { pompier: 'se déclare pompier 🚒', policier: 'se déclare policier 👮', soignant: 'se déclare soignant ⚕️' };
+
+let map, state = null, filter = 'all';
+let markers = new Map(), haloLayers = [], zoneLayers = [];
+let placing = null;      // { draft, marker } pendant le placement
+let recBlob = null, recMime = null, mediaRec = null;
+let photoBlob = null;
+let openPingId = null;
+let pollDelay = 20000, pollTimer = null;
+let knownIds = null;
+
+/* ---------- utilitaires ---------- */
+function toast(msg, err) {
+  const d = document.createElement('div');
+  d.className = 'toast' + (err ? ' err' : '');
+  d.textContent = msg;
+  $('#toasts').appendChild(d);
+  setTimeout(() => d.remove(), 5000);
+}
+function timeAgo(ts) {
+  const m = Math.floor((Date.now() - new Date(ts).getTime()) / 60000);
+  if (m < 1) return 'à l’instant';
+  if (m < 60) return `il y a ${m} min`;
+  const h = Math.floor(m / 60);
+  return `il y a ${h} h${m % 60 ? ' ' + (m % 60) + ' min' : ''}`;
+}
+async function api(url, opts = {}) {
+  if (opts.json) { opts.body = JSON.stringify(opts.json); opts.headers = { 'Content-Type': 'application/json' }; opts.method = opts.method || 'POST'; }
+  const r = await fetch(url, opts);
+  const data = await r.json().catch(() => ({}));
+  if (!r.ok) throw new Error(data.error || 'Erreur réseau');
+  return data;
+}
+function distKm(a, b, c, d) {
+  const r = x => x * Math.PI / 180, R = 6371;
+  const h = Math.sin(r(c - a) / 2) ** 2 + Math.cos(r(a)) * Math.cos(r(c)) * Math.sin(r(d - b) / 2) ** 2;
+  return 2 * R * Math.asin(Math.sqrt(h));
+}
+function inDangerZone(lat, lng) {
+  if (!state) return null;
+  return state.zones.find(z => distKm(lat, lng, z.lat, z.lng) * 1000 <= z.r) || null;
+}
+function chipsToggle(container, multi = true) {
+  container.querySelectorAll('.chip').forEach(ch => ch.onclick = () => {
+    if (!multi) container.querySelectorAll('.chip').forEach(o => o.classList.remove('on'));
+    ch.classList.toggle('on');
+  });
+}
+const chipsValues = container => [...container.querySelectorAll('.chip.on')].map(c => c.dataset.v);
+
+/* ---------- carte ---------- */
+function initMap() {
+  map = L.map('map', { zoomControl: false }).setView([44.8, -0.9], 9); // Gironde
+  L.tileLayer('https://tile.openstreetmap.org/{z}/{x}/{y}.png', {
+    maxZoom: 19, attribution: '© OpenStreetMap',
+  }).addTo(map);
+  navigator.geolocation?.getCurrentPosition(p => {
+    if (!openPingId) map.setView([p.coords.latitude, p.coords.longitude], 12);
+  }, () => {}, { timeout: 5000 });
+}
+
+function render() {
+  if (!state) return;
+  // stats
+  const s = state.stats;
+  $('#statsline').textContent = `${s.besoins} besoins · ${s.collectes} collectes · ${s.refuges} refuges · ${s.veille} en veille · ✅ ${s.resolved} résolus`;
+
+  // marqueurs
+  const keep = new Set();
+  for (const p of state.pings) {
+    if (filter !== 'all' && p.kind !== filter) continue;
+    keep.add(p.id);
+    const meta = TYPE_META[p.type];
+    const cnt = p.arrivals.length ? `<span class="cnt">${p.arrivals.length}</span>` : '';
+    const icon = L.divIcon({ className: '', html: `<div class="pin">${meta.emoji}${cnt}</div>`, iconSize: [30, 30], iconAnchor: [15, 15] });
+    if (markers.has(p.id)) {
+      markers.get(p.id).setIcon(icon).setLatLng([p.lat, p.lng]);
+    } else {
+      const m = L.marker([p.lat, p.lng], { icon }).addTo(map).on('click', () => openSheet(p.id));
+      markers.set(p.id, m);
+    }
+  }
+  for (const [id, m] of markers) if (!keep.has(id)) { m.remove(); markers.delete(id); }
+
+  // halos qui-vive
+  haloLayers.forEach(l => l.remove());
+  haloLayers = state.halos.map(h =>
+    L.circle([h.lat, h.lng], { radius: 500, color: '#2e9e5b', weight: 1, fillOpacity: .15 })
+      .addTo(map).bindTooltip('💪 Dépanneur en veille' + (h.cats ? ' — ' + h.cats.split(',').map(c => TYPE_META[c]?.label || c).join(', ') : '')));
+
+  // zones de danger
+  zoneLayers.forEach(l => l.remove());
+  zoneLayers = state.zones.map(z =>
+    L.circle([z.lat, z.lng], { radius: z.r, color: '#d64541', weight: 2, dashArray: '6 6', fillOpacity: .08 })
+      .addTo(map).bindTooltip('⚠️ ' + esc(z.label)));
+
+  renderBanners();
+  if (openPingId) renderSheet(openPingId, true);
+}
+
+/* ---------- polling ---------- */
+async function poll() {
+  clearTimeout(pollTimer);
+  try {
+    const data = await api('/api/state');
+    const prevIds = knownIds;
+    state = data;
+    knownIds = new Set(data.pings.map(p => p.id));
+    if (prevIds) {
+      for (const p of data.pings) {
+        if (!prevIds.has(p.id) && !p.mine) { toast(`${TYPE_META[p.type].emoji} Nouveau : ${p.title}`); break; }
+      }
+    }
+    pollDelay = 20000;
+    render();
+  } catch (e) {
+    pollDelay = Math.min(pollDelay * 2, 180000); // backoff : on ne matraque pas un serveur qui souffre
+  }
+  pollTimer = setTimeout(poll, pollDelay);
+}
+document.addEventListener('visibilitychange', () => { if (!document.hidden) poll(); });
+
+/* ---------- bannières ---------- */
+function renderBanners() {
+  // demandes de numéro entrantes
+  const pending = state.contact.incoming.filter(c => c.status === 'pending');
+  const cb = $('#contactBanner');
+  if (pending.length) {
+    const c = pending[0];
+    cb.innerHTML = `📞 <b>${esc(c.name || 'Quelqu’un')}</b>${c.prof ? ' <span class="badge prof">' + PROF_LABEL[c.prof] + '</span>' : ''}
+      demande votre numéro pour «&nbsp;${esc(c.pingTitle)}&nbsp;»
+      <input type="tel" id="cbPhone" placeholder="Votre numéro" autocomplete="tel">
+      <div class="row">
+        <button class="btn ghost" id="cbNo">Refuser</button>
+        <button class="btn" id="cbYes">Partager</button>
+      </div>`;
+    cb.classList.remove('hidden');
+    $('#cbYes').onclick = async () => {
+      const phone = $('#cbPhone').value.trim();
+      if (phone.length < 6) return toast('Numéro invalide', true);
+      try { await api(`/api/contact/${c.id}/respond`, { json: { accept: true, phone } }); toast('Numéro partagé ✅'); poll(); }
+      catch (e) { toast(e.message, true); }
+    };
+    $('#cbNo').onclick = async () => { await api(`/api/contact/${c.id}/respond`, { json: { accept: false } }).catch(() => {}); poll(); };
+  } else cb.classList.add('hidden');
+
+  // fiches expirées à re-déclarer
+  const rd = $('#redeclare');
+  if (state.myExpired.length && pending.length === 0) {
+    const e0 = state.myExpired[0];
+    rd.innerHTML = `⏳ Votre fiche «&nbsp;${esc(e0.title)}&nbsp;» a expiré (24 h). Toujours d'actualité ?
+      <div class="row"><button class="btn ghost" id="rdNo">Non, oublier</button><button class="btn" id="rdYes">🔄 Re-déclarer</button></div>`;
+    rd.classList.remove('hidden');
+    $('#rdYes').onclick = () => { rd.classList.add('hidden'); openEmit(e0.kind, e0); };
+    $('#rdNo').onclick = () => rd.classList.add('hidden');
+  } else rd.classList.add('hidden');
+}
+
+/* ---------- fiche ---------- */
+function openSheet(id) {
+  openPingId = id;
+  renderSheet(id);
+  $('#sheet').classList.remove('hidden');
+}
+function closeSheet() { openPingId = null; $('#sheet').classList.add('hidden'); }
+
+function renderSheet(id, soft) {
+  const p = state.pings.find(x => x.id === id);
+  const el = $('#sheetContent');
+  if (!p) {
+    if (!soft) { el.innerHTML = '<p class="muted">Cette fiche n’existe plus (clôturée ou expirée).</p>'; }
+    return;
+  }
+  const meta = TYPE_META[p.type];
+  const zone = inDangerZone(p.lat, p.lng);
+  const myOut = state.contact.outgoing.find(c => c.pingId === p.id);
+
+  let html = `<h3>${meta.emoji} ${esc(p.title)}</h3>
+    <div><span class="badge" style="background:${meta.color}">${p.kind === 'besoin' ? '🆘 Besoin' : '🤝 Offre'} — ${meta.label}</span>
+    <span class="badge">${timeAgo(p.at)}</span>
+    ${p.ownerName ? `<span class="badge">par ${esc(p.ownerName)}</span>` : ''}
+    ${p.ownerProf ? `<span class="badge prof">${PROF_LABEL[p.ownerProf]}</span>` : ''}
+    ${zone ? `<span class="badge zone">⚠️ zone «&nbsp;${esc(zone.label)}&nbsp;» — ne vous y rendez pas</span>` : ''}</div>
+    <p style="margin:.45rem 0"><a class="btn ghost small-btn" style="text-decoration:none"
+      href="https://www.google.com/maps/dir/?api=1&destination=${p.lat},${p.lng}" target="_blank" rel="noopener">🧭 Itinéraire (Google Maps — feux et routes coupées visibles)</a></p>`;
+  if (p.message) html += `<p style="margin:.5rem 0">${esc(p.message)}</p>`;
+  if (p.privateMessage) {
+    html += `<div class="warn" style="border-color:#3a5a7a;background:#20303a">🔒 <b>Détails réservés :</b><br>${esc(p.privateMessage)}</div>`;
+  } else if (p.hasPrivate) {
+    html += `<p class="muted small">🔒 Cette fiche contient des détails privés (adresse exacte, contact…) visibles après avoir cliqué «&nbsp;J'arrive&nbsp;».</p>`;
+  }
+  if (p.photo) html += `<img src="/uploads/${esc(p.photo)}" alt="photo" loading="lazy">`;
+  if (p.audio) html += `<audio controls preload="none" src="/uploads/${esc(p.audio)}"></audio>`;
+  for (const u of p.updates) html += `<div class="updates"><div>🔄 ${esc(u.text)} <span class="muted small">(${timeAgo(u.at)})</span></div></div>`;
+
+  if (p.arrivals.length) {
+    html += `<div class="arrivals"><b>🚗 ${p.arrivals.length} en route :</b><ul>`;
+    for (const a of p.arrivals) {
+      html += `<li>${esc(a.name || 'Quelqu’un')}${a.prof ? ' <span class="badge prof">' + PROF_LABEL[a.prof] + '</span>' : ''}${a.eta ? ' — ' + esc(a.eta) : ''}${a.phone ? ` — <a href="tel:${esc(a.phone)}">📞 ${esc(a.phone)}</a>` : ''}</li>`;
+    }
+    html += '</ul></div>';
+  }
+  if (myOut?.status === 'accepted' && myOut.phone) {
+    html += `<p>✅ Numéro partagé : <a href="tel:${esc(myOut.phone)}" class="btn small-btn" style="display:inline-block">📞 Appeler ${esc(myOut.phone)}</a></p>`;
+  } else if (myOut?.status === 'pending') {
+    html += `<p class="muted small">📞 Demande de numéro envoyée, en attente…</p>`;
+  } else if (myOut?.status === 'declined') {
+    html += `<p class="muted small">L’émetteur n’a pas souhaité partager son numéro.</p>`;
+  }
+
+  html += `<div id="fActions"></div>`;
+  el.innerHTML = html;
+  const act = $('#fActions');
+
+  if (p.mine) {
+    act.innerHTML = `
+      <textarea id="fUpd" rows="2" maxlength="300" placeholder="Ajouter une mise à jour (ex : plus besoin d'eau, besoin de gants)"></textarea>
+      <div class="row"><button class="btn ghost" id="fUpdBtn">🔄 Publier la mise à jour</button></div>
+      <div class="row"><button class="btn ghost" id="fShare">📤 Partager</button><button class="btn" id="fClose">✅ Clôturer</button></div>`;
+    $('#fUpdBtn').onclick = async () => {
+      const t = $('#fUpd').value.trim(); if (!t) return;
+      try { await api(`/api/pings/${p.id}/update`, { json: { text: t } }); toast('Mise à jour publiée'); poll(); } catch (e) { toast(e.message, true); }
+    };
+    $('#fClose').onclick = async () => {
+      if (!confirm('Clôturer cette fiche ? Elle disparaîtra de la carte.')) return;
+      try { await api(`/api/pings/${p.id}/close`, { json: {} }); toast('Fiche clôturée ✅'); closeSheet(); poll(); } catch (e) { toast(e.message, true); }
+    };
+  } else if (p.iArrive) {
+    act.innerHTML = `<div class="row"><button class="btn ghost" id="fCancelArr">🚫 Je ne peux plus venir</button></div>
+      <div class="row"><button class="btn ghost" id="fShare">📤 Partager</button><button class="btn ghost" id="fReport">⚠️ Signaler</button></div>`;
+    $('#fCancelArr').onclick = async () => {
+      try { await api(`/api/pings/${p.id}/arrive`, { json: { cancel: true } }); toast('Prise en charge annulée'); poll(); } catch (e) { toast(e.message, true); }
+    };
+  } else {
+    act.innerHTML = `
+      <div id="arrForm" class="hidden">
+        <p class="small muted">J'y serai dans :</p>
+        <div class="chips" id="arrEta">
+          <button class="chip" data-v="~15 min">~15 min</button><button class="chip" data-v="~30 min">~30 min</button>
+          <button class="chip" data-v="~1 h">~1 h</button><button class="chip" data-v="~2 h et +">~2 h et +</button>
+        </div>
+        <input type="tel" id="arrPhone" placeholder="Mon numéro pour l'émetteur (facultatif)" autocomplete="tel">
+        <button class="btn" id="arrGo">✅ Confirmer : j'arrive</button>
+      </div>
+      <button class="btn help" id="fArrive">🚗 J'arrive</button>
+      <div class="row">
+        <button class="btn ghost" id="fAskPhone">📞 Demander son numéro</button>
+        <button class="btn ghost" id="fShare">📤 Partager</button>
+        <button class="btn ghost" id="fReport">⚠️</button>
+      </div>`;
+    $('#fArrive').onclick = () => { $('#arrForm').classList.remove('hidden'); $('#fArrive').classList.add('hidden'); chipsToggle($('#arrEta'), false); };
+    $('#arrGo').onclick = async () => {
+      try {
+        await api(`/api/pings/${p.id}/arrive`, { json: { eta: chipsValues($('#arrEta'))[0], phone: $('#arrPhone').value.trim() } });
+        toast('C’est noté, vous êtes attendu 💪'); askNotifPermission(); poll();
+      } catch (e) { toast(e.message, true); }
+    };
+    $('#fAskPhone').onclick = async () => {
+      try { await api(`/api/pings/${p.id}/contact-request`, { method: 'POST', json: {} }); toast('Demande envoyée — réponse ici même'); askNotifPermission(); poll(); } catch (e) { toast(e.message, true); }
+    };
+  }
+  const shareBtn = $('#fShare');
+  if (shareBtn) shareBtn.onclick = () => sharePing(p);
+  const repBtn = $('#fReport');
+  if (repBtn) repBtn.onclick = async () => {
+    if (!confirm('Signaler cette fiche comme abusive ou fausse ?')) return;
+    try { await api(`/api/pings/${p.id}/report`, { method: 'POST', json: {} }); toast('Signalement enregistré'); } catch (e) { toast(e.message, true); }
+  };
+}
+
+function sharePing(p) {
+  const url = `${location.origin}/p/${p.id}`;
+  if (navigator.share) navigator.share({ title: p.title, url }).catch(() => {});
+  else { navigator.clipboard?.writeText(url); toast('Lien copié 📋'); }
+}
+
+/* ---------- émission ---------- */
+function openEmit(kind, prefill) {
+  photoBlob = null; recBlob = null; $('#emitAttach').textContent = '';
+  $('#emitTitle').textContent = kind === 'besoin' ? '🆘 Émettre un besoin' : '🤝 Déclarer une offre';
+  const types = kind === 'besoin' ? ['humain', 'materiel', 'medical'] : ['collecte', 'refuge'];
+  $('#emitTypes').innerHTML = types.map(t => `<button class="chip" data-v="${t}">${TYPE_META[t].emoji} ${TYPE_META[t].label}</button>`).join('');
+  chipsToggle($('#emitTypes'), false);
+  $('#emitTypes .chip').classList.add('on');
+  $('#emitTitleInput').value = prefill?.title || '';
+  $('#emitMsg').value = prefill?.message || '';
+  $('#emitPriv').value = prefill?.private_message || '';
+  if (prefill?.type) $('#emitTypes').querySelectorAll('.chip').forEach(c => c.classList.toggle('on', c.dataset.v === prefill.type));
+  $('#emitModal').dataset.kind = kind;
+  $('#emitModal').dataset.prefillLat = prefill?.lat ?? '';
+  $('#emitModal').dataset.prefillLng = prefill?.lng ?? '';
+  $('#emitModal').classList.remove('hidden');
+}
+
+async function compressPhoto(file) {
+  // canvas → recompression jpeg : réduit le poids ET supprime les EXIF (dont le GPS)
+  const img = await createImageBitmap(file).catch(() => null);
+  if (!img) return null;
+  const max = 1280, k = Math.min(1, max / Math.max(img.width, img.height));
+  const cv = document.createElement('canvas');
+  cv.width = Math.round(img.width * k); cv.height = Math.round(img.height * k);
+  cv.getContext('2d').drawImage(img, 0, 0, cv.width, cv.height);
+  return new Promise(r => cv.toBlob(r, 'image/jpeg', 0.72));
+}
+
+function setupEmit() {
+  $('#btnNeed').onclick = () => openEmit('besoin');
+  $('#emitCancel').onclick = () => $('#emitModal').classList.add('hidden');
+
+  $('#emitPhoto').onchange = async e => {
+    const f = e.target.files[0]; if (!f) return;
+    photoBlob = await compressPhoto(f);
+    if (!photoBlob) { toast('Image illisible', true); return; }
+    $('#emitAttach').textContent = `📷 ${(photoBlob.size / 1024).toFixed(0)} Ko` + (recBlob ? ' + 🎙️' : '');
+  };
+
+  $('#emitRec').onclick = async () => {
+    if (mediaRec?.state === 'recording') { mediaRec.stop(); return; }
+    try {
+      const stream = await navigator.mediaDevices.getUserMedia({ audio: true });
+      recMime = ['audio/webm', 'audio/mp4', 'audio/ogg'].find(m => MediaRecorder.isTypeSupported(m)) || '';
+      mediaRec = new MediaRecorder(stream, recMime ? { mimeType: recMime } : undefined);
+      const chunks = [];
+      mediaRec.ondataavailable = e => chunks.push(e.data);
+      mediaRec.onstop = () => {
+        stream.getTracks().forEach(t => t.stop());
+        recBlob = new Blob(chunks, { type: recMime || 'audio/webm' });
+        recMime = recBlob.type;
+        if (recBlob.size > 1_400_000) { recBlob = null; toast('Vocal trop long', true); }
+        $('#emitRec').textContent = '🎙️ Vocal';
+        $('#emitAttach').textContent = (photoBlob ? '📷 + ' : '') + (recBlob ? `🎙️ ${(recBlob.size / 1024).toFixed(0)} Ko` : '');
+      };
+      mediaRec.start();
+      $('#emitRec').textContent = '⏹️ Stop (60 s max)';
+      setTimeout(() => { if (mediaRec?.state === 'recording') mediaRec.stop(); }, 60000);
+    } catch { toast('Micro non disponible', true); }
+  };
+
+  $('#emitPlace').onclick = () => {
+    const type = chipsValues($('#emitTypes'))[0];
+    const title = $('#emitTitleInput').value.trim();
+    if (!type) return toast('Choisissez une catégorie', true);
+    if (!title) return toast('Un titre court est requis', true);
+    const kind = $('#emitModal').dataset.kind;
+    $('#emitModal').classList.add('hidden');
+    startPlacing({ kind, type, title, message: $('#emitMsg').value.trim(), private_message: $('#emitPriv').value.trim() },
+      parseFloat($('#emitModal').dataset.prefillLat) || null,
+      parseFloat($('#emitModal').dataset.prefillLng) || null);
+  };
+}
+
+function startPlacing(draft, lat, lng) {
+  const c = map.getCenter();
+  const pos = [lat ?? c.lat, lng ?? c.lng];
+  const meta = TYPE_META[draft.type];
+  const marker = L.marker(pos, {
+    draggable: true,
+    icon: L.divIcon({ className: '', html: `<div class="pin">${meta.emoji}</div>`, iconSize: [30, 30], iconAnchor: [15, 15] }),
+  }).addTo(map);
+  map.setView(pos, Math.max(map.getZoom(), 13));
+  placing = { draft, marker };
+  $('#mainBtns').classList.add('hidden');
+  $('#placeBar').classList.remove('hidden');
+  const checkZone = () => {
+    const ll = marker.getLatLng();
+    const z = inDangerZone(ll.lat, ll.lng);
+    const w = $('#placeWarn');
+    if (z) { w.textContent = `⚠️ zone « ${z.label} » — placez le point de rencontre en retrait !`; w.classList.remove('hidden'); }
+    else w.classList.add('hidden');
+  };
+  marker.on('dragend', checkZone); checkZone();
+  if (lat == null && navigator.geolocation) {
+    navigator.geolocation.getCurrentPosition(p => {
+      marker.setLatLng([p.coords.latitude, p.coords.longitude]);
+      map.setView([p.coords.latitude, p.coords.longitude], 14);
+      checkZone();
+    }, () => {}, { timeout: 4000 });
+  }
+}
+function stopPlacing() {
+  placing?.marker.remove(); placing = null;
+  $('#placeBar').classList.add('hidden');
+  $('#mainBtns').classList.remove('hidden');
+}
+
+async function submitPing() {
+  const ll = placing.marker.getLatLng();
+  const d = placing.draft;
+  const fd = new FormData();
+  fd.append('kind', d.kind); fd.append('type', d.type);
+  fd.append('title', d.title); fd.append('message', d.message);
+  fd.append('private_message', d.private_message || '');
+  fd.append('lat', ll.lat.toFixed(6)); fd.append('lng', ll.lng.toFixed(6));
+  if (photoBlob) fd.append('photo', photoBlob, 'photo.jpg');
+  if (recBlob) fd.append('audio', recBlob, 'voice.' + (recMime.includes('mp4') ? 'm4a' : recMime.includes('ogg') ? 'ogg' : 'webm'));
+  $('#placeOk').disabled = true;
+  try {
+    const r = await api('/api/pings', { method: 'POST', body: fd });
+    stopPlacing();
+    $('#doneCode').textContent = r.closeCode;
+    $('#doneModal').classList.remove('hidden');
+    $('#doneShare').onclick = () => sharePing({ id: r.id, title: d.title });
+    poll();
+  } catch (e) { toast(e.message, true); }
+  $('#placeOk').disabled = false;
+}
+
+/* ---------- notifications push ---------- */
+function pushSupported() { return 'serviceWorker' in navigator && 'PushManager' in window && Notification.permission !== 'denied'; }
+function isIosNoPush() {
+  const ios = /iP(hone|ad|od)/.test(navigator.userAgent);
+  return ios && !window.navigator.standalone && !('PushManager' in window);
+}
+async function subscribePush() {
+  if (!pushSupported()) return null;
+  const perm = await Notification.requestPermission();
+  if (perm !== 'granted') return null;
+  const reg = await navigator.serviceWorker.ready;
+  const key = state?.vapidKey; if (!key) return null;
+  const raw = atob(key.replace(/-/g, '+').replace(/_/g, '/'));
+  const arr = new Uint8Array([...raw].map(c => c.charCodeAt(0)));
+  try {
+    return await reg.pushManager.subscribe({ userVisibleOnly: true, applicationServerKey: arr });
+  } catch { return null; }
+}
+async function askNotifPermission() {
+  // pour l'émetteur / demandeur : un abonnement minimal suffit à recevoir ses notifications ciblées
+  if (!pushSupported() || Notification.permission === 'granted') return;
+  const sub = await subscribePush();
+  if (sub) await api('/api/watch', { json: { ...currentWatchPrefs(), subscription: sub } }).catch(() => {});
+}
+function currentWatchPrefs() {
+  const w = state?.me?.watch;
+  return {
+    cats: w ? w.cats.split(',').filter(Boolean) : [],
+    offerCats: w ? w.offer_cats.split(',').filter(Boolean) : [],
+    lat: w?.lat, lng: w?.lng, radiusKm: w?.radius_km || 20, visible: !!w?.visible,
+  };
+}
+
+/* ---------- panneau je dépanne ---------- */
+function setupHelp() {
+  const panel = $('#helpPanel');
+  chipsToggle($('#helpCats')); chipsToggle($('#helpOffres'));
+  $('#helpRadius').oninput = e => $('#helpRadiusVal').textContent = e.target.value + ' km';
+  $('#btnHelp').onclick = () => {
+    const w = state?.me?.watch;
+    if (w) {
+      const watched = w.cats.split(',');
+      $('#helpCats').querySelectorAll('.chip').forEach(c => c.classList.toggle('on', watched.includes(c.dataset.v)));
+      $('#helpOffres').querySelectorAll('.chip').forEach(c => c.classList.toggle('on', watched.includes(c.dataset.v)));
+      $('#helpRadius').value = w.radius_km; $('#helpRadiusVal').textContent = w.radius_km + ' km';
+      $('#helpNotif').checked = !!w.subscribed;
+      $('#helpVisible').checked = !!w.visible;
+    }
+    $('#helpIosHint').hidden = !isIosNoPush();
+    panel.classList.remove('hidden');
+  };
+  $('#helpCancel').onclick = () => panel.classList.add('hidden');
+  $('#helpOffer').onclick = () => { panel.classList.add('hidden'); openEmit('offre'); };
+  $('#helpSave').onclick = async () => {
+    const cats = [...chipsValues($('#helpCats')), ...chipsValues($('#helpOffres'))];
+    const visible = $('#helpVisible').checked;
+    const wantNotif = $('#helpNotif').checked;
+    let pos = { lat: state?.me?.watch?.lat, lng: state?.me?.watch?.lng };
+    if (visible || wantNotif) {
+      const got = await new Promise(r => navigator.geolocation
+        ? navigator.geolocation.getCurrentPosition(p => r({ lat: p.coords.latitude, lng: p.coords.longitude }), () => r(null), { timeout: 6000 })
+        : r(null));
+      if (got) pos = got;
+      else if (pos.lat == null) { const c = map.getCenter(); pos = { lat: c.lat, lng: c.lng }; toast('Position GPS indisponible — centre de la carte utilisé'); }
+    }
+    let sub = null;
+    if (wantNotif) {
+      sub = await subscribePush();
+      if (!sub && isIosNoPush()) toast('iPhone : ajoutez le site à l’écran d’accueil pour les notifications', true);
+      else if (!sub) toast('Notifications refusées par le navigateur', true);
+    }
+    try {
+      await api('/api/watch', {
+        json: {
+          cats, offerCats: chipsValues($('#helpCats')),
+          lat: pos.lat, lng: pos.lng,
+          radiusKm: +$('#helpRadius').value, visible,
+          subscription: sub || undefined,
+        },
+      });
+      toast('Préférences enregistrées 💪');
+      panel.classList.add('hidden');
+      poll();
+    } catch (e) { toast(e.message, true); }
+  };
+}
+
+/* ---------- onboarding ---------- */
+function setupOnboarding() {
+  const done = localStorage.getItem('onboarded');
+  if (!done) $('#onboarding').classList.remove('hidden');
+  chipsToggle($('#obProf'), false);
+  $('#obNext').onclick = () => { $('#ob1').classList.add('hidden'); $('#ob2').classList.remove('hidden'); };
+  $('#obAccept').onclick = async () => {
+    const name = $('#obName').value.trim();
+    const prof = chipsValues($('#obProf'))[0] || null;
+    await api('/api/onboard', { json: { name, profession: prof } }).catch(() => {});
+    localStorage.setItem('onboarded', '1');
+    $('#ob2').classList.add('hidden'); $('#ob3').classList.remove('hidden');
+  };
+  $('#obNeed').onclick = () => { $('#onboarding').classList.add('hidden'); openEmit('besoin'); };
+  $('#obHelp').onclick = () => { $('#onboarding').classList.add('hidden'); $('#btnHelp').click(); };
+  $('#obSkip').onclick = () => $('#onboarding').classList.add('hidden');
+}
+
+/* ---------- init ---------- */
+function setupUI() {
+  $('#filters .chip').onclick = null;
+  $('#filters').querySelectorAll('.chip').forEach(ch => ch.onclick = () => {
+    $('#filters').querySelectorAll('.chip').forEach(o => o.classList.remove('on'));
+    ch.classList.add('on'); filter = ch.dataset.f; render();
+  });
+  $('#sheetClose').onclick = closeSheet;
+  $('#placeCancel').onclick = stopPlacing;
+  $('#placeOk').onclick = submitPing;
+  $('#doneClose').onclick = () => $('#doneModal').classList.add('hidden');
+  $('#doneNotif').onclick = async () => { await askNotifPermission(); toast(Notification.permission === 'granted' ? 'Notifications activées 🔔' : 'Notifications refusées', Notification.permission !== 'granted'); };
+  setupEmit(); setupHelp(); setupOnboarding();
+}
+
+async function boot() {
+  if ('serviceWorker' in navigator) navigator.serviceWorker.register('/sw.js').catch(() => {});
+  initMap();
+  setupUI();
+  await poll();
+  const m = location.hash.match(/^#p=([A-Za-z0-9]+)/);
+  if (m && state) {
+    const p = state.pings.find(x => x.id === m[1]);
+    if (p) { map.setView([p.lat, p.lng], 14); openSheet(p.id); }
+    else toast('Cette fiche n’existe plus (clôturée ou expirée)', true);
+  }
+}
+window.addEventListener('hashchange', () => {
+  const m = location.hash.match(/^#p=([A-Za-z0-9]+)/);
+  if (m && state) { const p = state.pings.find(x => x.id === m[1]); if (p) { map.setView([p.lat, p.lng], 14); openSheet(p.id); } }
+});
+boot();

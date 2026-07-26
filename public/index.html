@@ -1,0 +1,170 @@
+<!doctype html>
+<html lang="fr">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<title>Entraide Feu — carte d'entraide d'urgence</title>
+<meta name="description" content="Carte d'entraide en zone de feu : besoins et offres géolocalisés, mise en relation directe.">
+<link rel="icon" href="/icon.svg" type="image/svg+xml">
+<link rel="manifest" href="/manifest.webmanifest">
+<meta name="theme-color" content="#1a1d24">
+<link rel="stylesheet" href="/vendor/leaflet/leaflet.css">
+<link rel="stylesheet" href="/style.css">
+</head>
+<body>
+
+<!-- ============ ONBOARDING ============ -->
+<div id="onboarding" class="overlay hidden">
+  <div class="ob-card">
+    <div class="ob-step" id="ob1">
+      <h1>🔥 Entraide Feu</h1>
+      <p class="lead">Carte d'entraide pour la zone touchée par l'incendie.
+      Émettez un <b>besoin urgent</b> ou proposez votre <b>aide</b> : les fiches sont publiques,
+      géolocalisées, et disparaissent après <b>24&nbsp;h</b>.</p>
+      <p class="warn">⚠️ N'allez <b>jamais</b> en zone dangereuse ou évacuée.<br>
+      Urgence vitale : appelez le <a href="tel:18">18</a> ou le <a href="tel:112">112</a> — pas de fiche.</p>
+      <button class="btn big" id="obNext">Continuer</button>
+    </div>
+    <div class="ob-step hidden" id="ob2">
+      <h2>Qui êtes-vous&nbsp;? <span class="muted">(facultatif)</span></h2>
+      <input id="obName" type="text" maxlength="40" placeholder="Prénom ou pseudo" autocomplete="given-name">
+      <p class="muted small">Si vous êtes professionnel, vous pouvez le déclarer <b>sur l'honneur</b> —
+      un badge «&nbsp;se déclare…&nbsp;» apparaîtra sur vos fiches :</p>
+      <div class="chips" id="obProf">
+        <button class="chip" data-v="pompier">🚒 Pompier</button>
+        <button class="chip" data-v="policier">👮 Policier / gendarme</button>
+        <button class="chip" data-v="soignant">⚕️ Soignant</button>
+      </div>
+      <p class="small muted">En continuant, vous acceptez le dépôt d'un <b>cookie technique anonyme</b>
+      (identifie votre navigateur, jamais votre personne) et vous <b>engagez votre responsabilité</b>
+      sur la sincérité de vos déclarations. Aucune donnée n'est conservée plus de 24&nbsp;h après expiration des fiches.
+      <a href="/legal.html" target="_blank">Mentions légales</a></p>
+      <button class="btn big" id="obAccept">J'accepte et je continue</button>
+    </div>
+    <div class="ob-step hidden" id="ob3">
+      <h2>Par quoi voulez-vous commencer&nbsp;?</h2>
+      <button class="btn big need" id="obNeed">🆘 Besoin d'aide&nbsp;?</button>
+      <button class="btn big help" id="obHelp">💪 Je dépanne</button>
+      <button class="linklike" id="obSkip">Juste voir la carte</button>
+    </div>
+  </div>
+</div>
+
+<!-- ============ BARRE HAUTE ============ -->
+<header id="topbar">
+  <div class="row1">
+    <span class="logo">🔥 Entraide Feu</span>
+    <span id="statsline" class="muted small"></span>
+  </div>
+  <div class="chips" id="filters">
+    <button class="chip on" data-f="all">Tout</button>
+    <button class="chip" data-f="besoin">🆘 Besoins</button>
+    <button class="chip" data-f="offre">🤝 Offres</button>
+  </div>
+</header>
+
+<div id="map"></div>
+
+<!-- bannière fiches expirées à re-déclarer -->
+<div id="redeclare" class="banner hidden"></div>
+
+<!-- bannière demande de numéro entrante -->
+<div id="contactBanner" class="banner hidden"></div>
+
+<!-- boutons principaux -->
+<div id="mainBtns">
+  <button class="btn need" id="btnNeed">🆘 Besoin d'aide</button>
+  <button class="btn help" id="btnHelp">💪 Je dépanne</button>
+</div>
+
+<!-- barre de placement du pin -->
+<div id="placeBar" class="hidden">
+  <p>📍 Déplacez le repère à l'endroit exact <span id="placeWarn" class="warn-inline hidden"></span></p>
+  <div class="row">
+    <button class="btn ghost" id="placeCancel">Annuler</button>
+    <button class="btn" id="placeOk">Valider ici</button>
+  </div>
+</div>
+
+<!-- ============ FICHE (bottom sheet) ============ -->
+<div id="sheet" class="sheet hidden">
+  <div class="sheet-handle" id="sheetClose">✕</div>
+  <div id="sheetContent"></div>
+</div>
+
+<!-- ============ FORMULAIRE D'ÉMISSION ============ -->
+<div id="emitModal" class="overlay hidden">
+  <div class="modal">
+    <h2 id="emitTitle">Émettre un besoin</h2>
+    <div class="chips" id="emitTypes"></div>
+    <input id="emitTitleInput" type="text" maxlength="80" placeholder="Titre court (ex : besoin d'AdBlue pour camion pompier) *">
+    <textarea id="emitMsg" maxlength="1000" rows="3" placeholder="Détails publics : quoi, combien, où se retrouver…"></textarea>
+    <textarea id="emitPriv" maxlength="500" rows="2" placeholder="🔒 Partie privée (adresse exacte, code, téléphone…) — visible uniquement des personnes qui viennent"></textarea>
+    <div class="row">
+      <label class="btn ghost small-btn" for="emitPhoto">📷 Photo</label>
+      <input type="file" id="emitPhoto" accept="image/*" hidden>
+      <button class="btn ghost small-btn" id="emitRec">🎙️ Vocal</button>
+      <span id="emitAttach" class="muted small"></span>
+    </div>
+    <p class="small muted">⚠️ Point de rencontre <b>en retrait</b> du danger. Pas d'urgence vitale ici → <a href="tel:112">112</a>.</p>
+    <div class="row">
+      <button class="btn ghost" id="emitCancel">Annuler</button>
+      <button class="btn" id="emitPlace">📍 Placer sur la carte</button>
+    </div>
+  </div>
+</div>
+
+<!-- ============ PANNEAU JE DÉPANNE ============ -->
+<div id="helpPanel" class="overlay hidden">
+  <div class="modal">
+    <h2>💪 Je dépanne</h2>
+    <p class="small muted">Ce que vous pouvez proposer :</p>
+    <div class="chips" id="helpCats">
+      <button class="chip" data-v="humain">🙋 Bras / véhicule</button>
+      <button class="chip" data-v="materiel">📦 Matériel</button>
+      <button class="chip" data-v="medical">⚕️ Médical</button>
+    </div>
+    <p class="small muted">M'alerter aussi pour :</p>
+    <div class="chips" id="helpOffres">
+      <button class="chip" data-v="collecte">📥 Collectes</button>
+      <button class="chip" data-v="refuge">🏠 Refuges</button>
+    </div>
+    <label class="rangeLabel">Rayon d'alerte : <b id="helpRadiusVal">20 km</b>
+      <input type="range" id="helpRadius" min="2" max="100" value="20">
+    </label>
+    <label class="switch"><input type="checkbox" id="helpNotif"> 🔔 Recevoir les alertes (notifications)</label>
+    <label class="switch"><input type="checkbox" id="helpVisible"> 👁️ Me montrer «&nbsp;sur le qui-vive&nbsp;» sur la carte <span class="muted small">(position floutée à ~500&nbsp;m)</span></label>
+    <p class="small muted" id="helpIosHint" hidden>📱 Sur iPhone : ajoutez d'abord le site à l'écran d'accueil (Partager → Sur l'écran d'accueil) pour recevoir les notifications.</p>
+    <div class="row">
+      <button class="btn ghost small-btn" id="helpOffer">➕ Déclarer collecte / refuge</button>
+    </div>
+    <div class="row">
+      <button class="btn ghost" id="helpCancel">Fermer</button>
+      <button class="btn" id="helpSave">Enregistrer</button>
+    </div>
+  </div>
+</div>
+
+<!-- ============ APRÈS ÉMISSION ============ -->
+<div id="doneModal" class="overlay hidden">
+  <div class="modal">
+    <h2>✅ Fiche publiée</h2>
+    <p>Code de clôture de secours (notez-le si vous risquez de changer d'appareil)&nbsp;:</p>
+    <p class="code" id="doneCode"></p>
+    <button class="btn" id="doneNotif">🔔 Me prévenir quand quelqu'un arrive</button>
+    <button class="btn ghost" id="doneShare">📤 Partager la fiche</button>
+    <button class="linklike" id="doneClose">Fermer</button>
+  </div>
+</div>
+
+<footer id="footer">
+  <span>Urgence vitale : <a href="tel:18">📞 18</a> · <a href="tel:112">112</a></span>
+  <span><a href="/affiche.html" target="_blank">Affiche QR</a> · <a href="/legal.html" target="_blank">Mentions</a></span>
+</footer>
+
+<div id="toasts"></div>
+
+<script src="/vendor/leaflet/leaflet.js"></script>
+<script src="/app.js"></script>
+</body>
+</html>

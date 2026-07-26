@@ -1,0 +1,448 @@
+require('dotenv').config();
+const express = require('express');
+const crypto = require('crypto');
+const fs = require('fs');
+const path = require('path');
+const multer = require('multer');
+const webpush = require('web-push');
+const QRCode = require('qrcode');
+const { q, init } = require('./db');
+
+const DATA_DIR = path.join(__dirname, 'data');
+const UP_DIR = path.join(__dirname, 'uploads');
+fs.mkdirSync(DATA_DIR, { recursive: true });
+fs.mkdirSync(UP_DIR, { recursive: true });
+
+// Secrets : .env prioritaire, sinon générés une fois et persistés dans data/
+function persisted(file, gen) {
+  const f = path.join(DATA_DIR, file);
+  if (fs.existsSync(f)) return fs.readFileSync(f, 'utf8').trim();
+  const v = gen();
+  fs.writeFileSync(f, v, { mode: 0o600 });
+  return v;
+}
+const SECRET = process.env.SECRET || persisted('secret.txt', () => crypto.randomBytes(32).toString('hex'));
+const ADMIN_KEY = process.env.ADMIN_KEY || persisted('admin_key.txt', () => crypto.randomBytes(9).toString('base64url'));
+const vapid = (process.env.VAPID_PUBLIC_KEY && process.env.VAPID_PRIVATE_KEY)
+  ? { publicKey: process.env.VAPID_PUBLIC_KEY, privateKey: process.env.VAPID_PRIVATE_KEY }
+  : JSON.parse(persisted('vapid.json', () => JSON.stringify(webpush.generateVAPIDKeys())));
+const CONTACT = process.env.CONTACT_EMAIL || 'contact@example.org';
+webpush.setVapidDetails('mailto:' + CONTACT, vapid.publicKey, vapid.privateKey);
+
+const BASE_URL = (process.env.BASE_URL || 'http://localhost:3000').replace(/\/$/, '');
+const TTL_H = 24;    // durée de vie publique d'un ping
+const PURGE_H = 72;  // suppression définitive (fenêtre de re-déclaration)
+const REPORT_THRESHOLD = 3;
+const TYPES = { besoin: ['humain', 'materiel', 'medical'], offre: ['collecte', 'refuge'] };
+const ALL_TYPES = [...TYPES.besoin, ...TYPES.offre];
+const TYPE_LABEL = { humain: '🙋 Bras / véhicule', materiel: '📦 Matériel', medical: '⚕️ Médical', collecte: '📥 Point de collecte', refuge: '🏠 Refuge' };
+
+const app = express();
+app.set('trust proxy', 1);
+app.use(express.json({ limit: '100kb' }));
+
+// ---------- identité cookie ----------
+app.use((req, res, next) => {
+  const cookies = Object.fromEntries((req.headers.cookie || '').split(';')
+    .map(s => s.trim().split('=')).filter(a => a[0]).map(a => [a[0], decodeURIComponent(a.slice(1).join('='))]));
+  let fid = cookies.fid;
+  if (!fid || !/^[a-f0-9]{48}$/.test(fid)) {
+    fid = crypto.randomBytes(24).toString('hex');
+    const secure = req.secure || req.headers['x-forwarded-proto'] === 'https' ? '; Secure' : '';
+    res.setHeader('Set-Cookie', `fid=${fid}; Max-Age=31536000; Path=/; HttpOnly; SameSite=Lax${secure}`);
+  }
+  req.hash = crypto.createHmac('sha256', SECRET).update(fid).digest('hex');
+  next();
+});
+
+// ---------- rate limit maison (généreux : CGNAT) ----------
+const buckets = new Map();
+function rateLimit(key, max, windowMs) {
+  const now = Date.now();
+  const b = buckets.get(key);
+  if (!b || now > b.reset) { buckets.set(key, { n: 1, reset: now + windowMs }); return true; }
+  return ++b.n <= max;
+}
+setInterval(() => { const now = Date.now(); for (const [k, b] of buckets) if (now > b.reset) buckets.delete(k); }, 600000).unref();
+function limited(name, max) {
+  return (req, res, next) => rateLimit(`${name}:${req.ip}`, max, 3600000) ? next()
+    : res.status(429).json({ error: 'Trop de requêtes, réessayez plus tard.' });
+}
+
+async function isBanned(hash) {
+  const r = await q('SELECT banned FROM identities WHERE hash=?', [hash]);
+  return r.length && r[0].banned === 1;
+}
+function distKm(la1, lo1, la2, lo2) {
+  const r = x => x * Math.PI / 180, R = 6371;
+  const h = Math.sin(r(la2 - la1) / 2) ** 2 + Math.cos(r(la1)) * Math.cos(r(la2)) * Math.sin(r(lo2 - lo1) / 2) ** 2;
+  return 2 * R * Math.asin(Math.sqrt(h));
+}
+const newId = () => crypto.randomBytes(8).toString('base64url').replace(/[-_]/g, 'a').slice(0, 10);
+const cleanPhone = p => { const s = String(p || '').replace(/[^+0-9 ]/g, '').trim().slice(0, 25); return s.length >= 6 ? s : null; };
+const esc = s => String(s ?? '').replace(/[&<>"']/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
+
+// ---------- push ----------
+async function pushTo(hash, payload) {
+  const rows = await q('SELECT subscription FROM watchers WHERE hash=? AND subscription IS NOT NULL', [hash]);
+  if (!rows.length) return;
+  try {
+    await webpush.sendNotification(JSON.parse(rows[0].subscription), JSON.stringify(payload), { TTL: 3600 });
+  } catch (e) {
+    if (e.statusCode === 404 || e.statusCode === 410)
+      await q('UPDATE watchers SET subscription=NULL WHERE hash=?', [hash]);
+  }
+}
+async function pushWatchers(ping) {
+  const rows = await q('SELECT hash, subscription, cats, lat, lng, radius_km FROM watchers WHERE subscription IS NOT NULL AND hash<>?', [ping.owner_hash]);
+  const payload = {
+    title: `${TYPE_LABEL[ping.type]} — nouveau ${ping.kind}`,
+    body: ping.title,
+    url: `/#p=${ping.id}`,
+  };
+  for (const w of rows) {
+    if (!w.cats.split(',').includes(ping.type)) continue;
+    if (w.lat != null && distKm(+w.lat, +w.lng, +ping.lat, +ping.lng) > w.radius_km) continue;
+    pushTo(w.hash, payload); // fire and forget
+  }
+}
+
+// ---------- uploads ----------
+const upload = multer({
+  storage: multer.memoryStorage(),
+  limits: { fileSize: 1_500_000, files: 2 },
+});
+function saveUpload(file, kindAllowed) {
+  if (!file) return null;
+  const ok = {
+    photo: { 'image/jpeg': '.jpg', 'image/png': '.png', 'image/webp': '.webp' },
+    audio: { 'audio/webm': '.webm', 'video/webm': '.webm', 'audio/mp4': '.m4a', 'audio/mpeg': '.mp3', 'audio/ogg': '.ogg', 'audio/wav': '.wav' },
+  }[kindAllowed];
+  const ext = ok[(file.mimetype || '').split(';')[0]];
+  if (!ext) return null;
+  const name = crypto.randomBytes(16).toString('hex') + ext;
+  fs.writeFileSync(path.join(UP_DIR, name), file.buffer);
+  return name;
+}
+function deleteFiles(ping) {
+  for (const f of [ping.photo, ping.audio]) {
+    if (f && /^[a-f0-9]+\.[a-z0-9]+$/.test(f)) fs.rmSync(path.join(UP_DIR, f), { force: true });
+  }
+}
+
+// ============================================================
+// API
+// ============================================================
+
+// Profil d'onboarding (facultatif, sur l'honneur)
+app.post('/api/onboard', limited('onboard', 30), async (req, res) => {
+  const name = String(req.body.name || '').trim().slice(0, 40) || null;
+  const prof = ['pompier', 'policier', 'soignant'].includes(req.body.profession) ? req.body.profession : null;
+  await q('INSERT INTO identities (hash, name, profession) VALUES (?,?,?) ON DUPLICATE KEY UPDATE name=VALUES(name), profession=VALUES(profession)', [req.hash, name, prof]);
+  res.json({ ok: true });
+});
+
+// État global — l'unique endpoint de polling
+app.get('/api/state', async (req, res) => {
+  const pings = await q(`
+    SELECT p.*, i.name AS owner_name, i.profession AS owner_prof
+    FROM pings p LEFT JOIN identities i ON i.hash = p.owner_hash
+    WHERE p.hidden = 0 AND p.status = 'open' AND p.created_at > NOW() - INTERVAL ${TTL_H} HOUR
+    ORDER BY p.created_at DESC LIMIT 500`);
+  const ids = pings.map(p => p.id);
+  const [updates, arrivals, myReqs, zones, halos, statsRow, meRows, myWatch, myExpired] = await Promise.all([
+    ids.length ? q(`SELECT ping_id, text, created_at FROM ping_updates WHERE ping_id IN (?) ORDER BY created_at`, [ids]) : [],
+    ids.length ? q(`SELECT a.ping_id, a.helper_hash, a.eta, a.phone, a.created_at, i.name, i.profession
+                    FROM arrivals a LEFT JOIN identities i ON i.hash=a.helper_hash WHERE a.ping_id IN (?)`, [ids]) : [],
+    q(`SELECT c.*, p.title AS ping_title, p.owner_hash, ri.name AS requester_name, ri.profession AS requester_prof
+       FROM contact_requests c JOIN pings p ON p.id=c.ping_id
+       LEFT JOIN identities ri ON ri.hash=c.requester_hash
+       WHERE (p.owner_hash=? OR c.requester_hash=?) AND c.created_at > NOW() - INTERVAL ${TTL_H} HOUR`, [req.hash, req.hash]),
+    q('SELECT id, label, lat, lng, radius_m FROM zones'),
+    q(`SELECT lat, lng, offer_cats FROM watchers WHERE visible=1 AND lat IS NOT NULL AND updated_at > NOW() - INTERVAL ${TTL_H} HOUR`),
+    q("SELECT v FROM stats WHERE k='resolved'"),
+    q('SELECT name, profession FROM identities WHERE hash=?', [req.hash]),
+    q('SELECT cats, lat, lng, radius_km, visible, offer_cats, subscription IS NOT NULL AS subscribed FROM watchers WHERE hash=?', [req.hash]),
+    q(`SELECT id, kind, type, title, message, private_message, lat, lng FROM pings
+       WHERE owner_hash=? AND created_at <= NOW() - INTERVAL ${TTL_H} HOUR AND created_at > NOW() - INTERVAL ${PURGE_H} HOUR`, [req.hash]),
+  ]);
+
+  const upd = {}, arr = {};
+  for (const u of updates) (upd[u.ping_id] ||= []).push({ text: u.text, at: u.created_at });
+  for (const a of arrivals) (arr[a.ping_id] ||= []).push(a);
+
+  const out = pings.map(p => {
+    const mine = p.owner_hash === req.hash;
+    const list = arr[p.id] || [];
+    const engaged = mine || list.some(a => a.helper_hash === req.hash);
+    return {
+      id: p.id, kind: p.kind, type: p.type, title: p.title, message: p.message,
+      // partie privée : réservée à l'émetteur et à ceux qui ont dit « j'arrive »
+      hasPrivate: !!p.private_message,
+      privateMessage: engaged ? p.private_message : undefined,
+      lat: +p.lat, lng: +p.lng, photo: p.photo, audio: p.audio,
+      at: p.created_at, ownerName: p.owner_name, ownerProf: p.owner_prof,
+      mine, iArrive: list.some(a => a.helper_hash === req.hash),
+      updates: upd[p.id] || [],
+      arrivals: list.map(a => ({
+        name: a.name, prof: a.profession, eta: a.eta, at: a.created_at,
+        phone: mine ? a.phone : undefined, // le numéro laissé par un dépanneur n'est visible que de l'émetteur
+      })),
+    };
+  });
+
+  // demandes de numéro : côté émetteur (à traiter) et côté demandeur (réponses)
+  const contact = { incoming: [], outgoing: [] };
+  for (const c of myReqs) {
+    if (c.owner_hash === req.hash && c.requester_hash !== req.hash) {
+      contact.incoming.push({ id: c.id, pingId: c.ping_id, pingTitle: c.ping_title, status: c.status, name: c.requester_name, prof: c.requester_prof, at: c.created_at });
+    }
+    if (c.requester_hash === req.hash) {
+      contact.outgoing.push({ pingId: c.ping_id, pingTitle: c.ping_title, status: c.status, phone: c.status === 'accepted' ? c.phone : undefined, at: c.created_at });
+    }
+  }
+
+  res.json({
+    pings: out,
+    zones: zones.map(z => ({ id: z.id, label: z.label, lat: +z.lat, lng: +z.lng, r: z.radius_m })),
+    halos: halos.map(h => ({ lat: Math.round(h.lat / 0.005) * 0.005, lng: Math.round(h.lng / 0.005) * 0.005, cats: h.offer_cats })),
+    stats: {
+      besoins: out.filter(p => p.kind === 'besoin').length,
+      collectes: out.filter(p => p.type === 'collecte').length,
+      refuges: out.filter(p => p.type === 'refuge').length,
+      veille: halos.length,
+      resolved: statsRow[0]?.v || 0,
+    },
+    me: { name: meRows[0]?.name || null, prof: meRows[0]?.profession || null, watch: myWatch[0] || null },
+    myExpired,
+    contact,
+    vapidKey: vapid.publicKey,
+  });
+});
+
+// Créer un ping
+app.post('/api/pings', limited('create', 20), upload.fields([{ name: 'photo', maxCount: 1 }, { name: 'audio', maxCount: 1 }]), async (req, res) => {
+  if (await isBanned(req.hash)) return res.status(403).json({ error: 'Accès suspendu.' });
+  const { kind, type } = req.body;
+  const title = String(req.body.title || '').trim().slice(0, 80);
+  const message = String(req.body.message || '').trim().slice(0, 1000);
+  const privMsg = String(req.body.private_message || '').trim().slice(0, 500);
+  const lat = parseFloat(req.body.lat), lng = parseFloat(req.body.lng);
+  if (!TYPES[kind]?.includes(type)) return res.status(400).json({ error: 'Type invalide.' });
+  if (!title) return res.status(400).json({ error: 'Un titre court est requis.' });
+  if (!isFinite(lat) || !isFinite(lng) || Math.abs(lat) > 90 || Math.abs(lng) > 180) return res.status(400).json({ error: 'Position invalide.' });
+
+  const id = newId();
+  const code = String(crypto.randomInt(0, 10000)).padStart(4, '0');
+  const photo = saveUpload(req.files?.photo?.[0], 'photo');
+  const audio = saveUpload(req.files?.audio?.[0], 'audio');
+  await q('INSERT INTO pings (id, owner_hash, kind, type, title, message, private_message, lat, lng, photo, audio, close_code) VALUES (?,?,?,?,?,?,?,?,?,?,?,?)',
+    [id, req.hash, kind, type, title, message || null, privMsg || null, lat, lng, photo, audio, code]);
+  pushWatchers({ id, owner_hash: req.hash, kind, type, title, lat, lng }).catch(() => {});
+  res.json({ id, closeCode: code });
+});
+
+// J'arrive (toggle) — avec ETA et numéro facultatifs
+app.post('/api/pings/:id/arrive', limited('act', 120), async (req, res) => {
+  if (await isBanned(req.hash)) return res.status(403).json({ error: 'Accès suspendu.' });
+  const p = (await q("SELECT * FROM pings WHERE id=? AND status='open' AND hidden=0", [req.params.id]))[0];
+  if (!p) return res.status(404).json({ error: 'Ping introuvable ou clos.' });
+  const existing = await q('SELECT 1 FROM arrivals WHERE ping_id=? AND helper_hash=?', [p.id, req.hash]);
+  if (req.body.cancel || existing.length) {
+    await q('DELETE FROM arrivals WHERE ping_id=? AND helper_hash=?', [p.id, req.hash]);
+    if (!req.body.cancel && !existing.length) return res.json({ arrived: false });
+    return res.json({ arrived: false });
+  }
+  const eta = ['~15 min', '~30 min', '~1 h', '~2 h et +'].includes(req.body.eta) ? req.body.eta : null;
+  const phone = cleanPhone(req.body.phone);
+  await q('INSERT INTO arrivals (ping_id, helper_hash, eta, phone) VALUES (?,?,?,?)', [p.id, req.hash, eta, phone]);
+  const who = (await q('SELECT name, profession FROM identities WHERE hash=?', [req.hash]))[0] || {};
+  pushTo(p.owner_hash, {
+    title: `🚗 ${who.name || 'Quelqu’un'}${who.profession ? ' (se déclare ' + who.profession + ')' : ''} arrive`,
+    body: `${p.title}${eta ? ' — ' + eta : ''}`,
+    url: `/#p=${p.id}`,
+  }).catch(() => {});
+  res.json({ arrived: true });
+});
+
+// Clôturer (cookie propriétaire OU code de secours)
+app.post('/api/pings/:id/close', limited('act', 120), async (req, res) => {
+  const p = (await q("SELECT * FROM pings WHERE id=? AND status='open'", [req.params.id]))[0];
+  if (!p) return res.status(404).json({ error: 'Ping introuvable.' });
+  const byCode = req.body.code && String(req.body.code) === p.close_code;
+  if (p.owner_hash !== req.hash && !byCode) return res.status(403).json({ error: 'Seul l’émetteur peut clôturer (ou via le code de clôture).' });
+  await q("UPDATE pings SET status='closed', closed_at=NOW() WHERE id=?", [p.id]);
+  if (p.kind === 'besoin') await q("UPDATE stats SET v=v+1 WHERE k='resolved'");
+  res.json({ ok: true });
+});
+
+// Ajouter une mise à jour (émetteur uniquement)
+app.post('/api/pings/:id/update', limited('act', 120), async (req, res) => {
+  const p = (await q("SELECT * FROM pings WHERE id=? AND status='open'", [req.params.id]))[0];
+  if (!p || p.owner_hash !== req.hash) return res.status(403).json({ error: 'Réservé à l’émetteur.' });
+  const text = String(req.body.text || '').trim().slice(0, 300);
+  if (!text) return res.status(400).json({ error: 'Texte vide.' });
+  await q('INSERT INTO ping_updates (ping_id, text) VALUES (?,?)', [p.id, text]);
+  res.json({ ok: true });
+});
+
+// Signaler
+app.post('/api/pings/:id/report', limited('act', 60), async (req, res) => {
+  const p = (await q("SELECT id FROM pings WHERE id=? AND hidden=0", [req.params.id]))[0];
+  if (!p) return res.status(404).json({ error: 'Ping introuvable.' });
+  await q('INSERT IGNORE INTO reports (ping_id, reporter_hash) VALUES (?,?)', [p.id, req.hash]);
+  const n = (await q('SELECT COUNT(*) AS n FROM reports WHERE ping_id=?', [p.id]))[0].n;
+  if (n >= REPORT_THRESHOLD) await q('UPDATE pings SET hidden=1 WHERE id=?', [p.id]);
+  res.json({ ok: true });
+});
+
+// Demander le numéro de l'émetteur
+app.post('/api/pings/:id/contact-request', limited('act', 60), async (req, res) => {
+  if (await isBanned(req.hash)) return res.status(403).json({ error: 'Accès suspendu.' });
+  const p = (await q("SELECT * FROM pings WHERE id=? AND status='open' AND hidden=0", [req.params.id]))[0];
+  if (!p) return res.status(404).json({ error: 'Ping introuvable.' });
+  if (p.owner_hash === req.hash) return res.status(400).json({ error: 'C’est votre propre ping.' });
+  await q('INSERT IGNORE INTO contact_requests (ping_id, requester_hash) VALUES (?,?)', [p.id, req.hash]);
+  const who = (await q('SELECT name, profession FROM identities WHERE hash=?', [req.hash]))[0] || {};
+  pushTo(p.owner_hash, {
+    title: `📞 ${who.name || 'Quelqu’un'}${who.profession ? ' (se déclare ' + who.profession + ')' : ''} demande votre numéro`,
+    body: p.title,
+    url: `/#p=${p.id}`,
+  }).catch(() => {});
+  res.json({ ok: true });
+});
+
+// Répondre à une demande de numéro (émetteur du ping)
+app.post('/api/contact/:reqId/respond', limited('act', 120), async (req, res) => {
+  const c = (await q(`SELECT c.*, p.owner_hash, p.title FROM contact_requests c JOIN pings p ON p.id=c.ping_id WHERE c.id=?`, [req.params.reqId]))[0];
+  if (!c || c.owner_hash !== req.hash) return res.status(403).json({ error: 'Non autorisé.' });
+  if (req.body.accept) {
+    const phone = cleanPhone(req.body.phone);
+    if (!phone) return res.status(400).json({ error: 'Numéro invalide.' });
+    await q("UPDATE contact_requests SET status='accepted', phone=? WHERE id=?", [phone, c.id]);
+    pushTo(c.requester_hash, { title: '✅ Numéro partagé', body: `Pour « ${c.title} » — ouvrez la fiche.`, url: `/#p=${c.ping_id}` }).catch(() => {});
+  } else {
+    await q("UPDATE contact_requests SET status='declined' WHERE id=?", [c.id]);
+  }
+  res.json({ ok: true });
+});
+
+// Vigie / qui-vive : préférences + abonnement push
+app.post('/api/watch', limited('act', 60), async (req, res) => {
+  const cats = (Array.isArray(req.body.cats) ? req.body.cats : []).filter(c => ALL_TYPES.includes(c)).join(',');
+  const offerCats = (Array.isArray(req.body.offerCats) ? req.body.offerCats : []).filter(c => TYPES.besoin.includes(c)).join(',');
+  const lat = isFinite(parseFloat(req.body.lat)) ? parseFloat(req.body.lat) : null;
+  const lng = isFinite(parseFloat(req.body.lng)) ? parseFloat(req.body.lng) : null;
+  const radius = Math.min(200, Math.max(1, parseInt(req.body.radiusKm) || 20));
+  const visible = req.body.visible && lat != null ? 1 : 0;
+  let sub = null;
+  if (req.body.subscription && req.body.subscription.endpoint) sub = JSON.stringify(req.body.subscription).slice(0, 4000);
+  await q(`INSERT INTO watchers (hash, subscription, cats, lat, lng, radius_km, visible, offer_cats)
+           VALUES (?,?,?,?,?,?,?,?)
+           ON DUPLICATE KEY UPDATE subscription=COALESCE(VALUES(subscription), subscription),
+             cats=VALUES(cats), lat=VALUES(lat), lng=VALUES(lng), radius_km=VALUES(radius_km),
+             visible=VALUES(visible), offer_cats=VALUES(offer_cats)`,
+    [req.hash, sub, cats, lat, lng, radius, visible, offerCats]);
+  res.json({ ok: true });
+});
+app.post('/api/watch/stop', async (req, res) => {
+  await q('DELETE FROM watchers WHERE hash=?', [req.hash]);
+  res.json({ ok: true });
+});
+
+// ---------- admin ----------
+function adminOnly(req, res, next) {
+  const k = req.headers['x-admin-key'] || req.query.key;
+  if (k !== ADMIN_KEY) return res.status(403).json({ error: 'Clé admin invalide.' });
+  next();
+}
+app.get('/api/admin/overview', adminOnly, async (req, res) => {
+  const pings = await q(`
+    SELECT p.*, i.name AS owner_name, (SELECT COUNT(*) FROM reports r WHERE r.ping_id=p.id) AS reports
+    FROM pings p LEFT JOIN identities i ON i.hash=p.owner_hash
+    WHERE p.created_at > NOW() - INTERVAL ${PURGE_H} HOUR
+    ORDER BY reports DESC, p.created_at DESC LIMIT 300`);
+  const zones = await q('SELECT * FROM zones');
+  res.json({ pings, zones });
+});
+app.post('/api/admin/delete', adminOnly, async (req, res) => {
+  const p = (await q('SELECT * FROM pings WHERE id=?', [req.body.id]))[0];
+  if (p) { deleteFiles(p); await purgePing(p.id); }
+  res.json({ ok: true });
+});
+app.post('/api/admin/restore', adminOnly, async (req, res) => {
+  await q('UPDATE pings SET hidden=0 WHERE id=?', [req.body.id]);
+  await q('DELETE FROM reports WHERE ping_id=?', [req.body.id]);
+  res.json({ ok: true });
+});
+app.post('/api/admin/ban', adminOnly, async (req, res) => {
+  await q('INSERT INTO identities (hash, banned) VALUES (?,1) ON DUPLICATE KEY UPDATE banned=1', [String(req.body.hash)]);
+  res.json({ ok: true });
+});
+app.post('/api/admin/zone', adminOnly, async (req, res) => {
+  const { label, lat, lng, radius_m } = req.body;
+  if (!label || !isFinite(+lat) || !isFinite(+lng) || !(+radius_m > 0)) return res.status(400).json({ error: 'Zone invalide.' });
+  await q('INSERT INTO zones (label, lat, lng, radius_m) VALUES (?,?,?,?)', [String(label).slice(0, 80), +lat, +lng, Math.min(100000, +radius_m)]);
+  res.json({ ok: true });
+});
+app.post('/api/admin/zone-delete', adminOnly, async (req, res) => {
+  await q('DELETE FROM zones WHERE id=?', [+req.body.id]);
+  res.json({ ok: true });
+});
+
+// ---------- pages ----------
+
+// Lien de partage avec aperçu OpenGraph
+app.get('/p/:id', async (req, res) => {
+  const p = (await q("SELECT * FROM pings WHERE id=? AND hidden=0 AND created_at > NOW() - INTERVAL 24 HOUR", [req.params.id]))[0];
+  const title = p ? `${TYPE_LABEL[p.type]} — ${p.title}` : 'Entraide Feu';
+  const desc = p ? (p.message || 'Besoin ou offre d’aide en zone de feu — ouvrez la carte.') : 'Carte d’entraide en zone de feu.';
+  const img = p?.photo ? `${BASE_URL}/uploads/${p.photo}` : `${BASE_URL}/icon.svg`;
+  res.send(`<!doctype html><html lang="fr"><head><meta charset="utf-8">
+<title>${esc(title)}</title>
+<meta property="og:title" content="${esc(title)}">
+<meta property="og:description" content="${esc(desc.slice(0, 200))}">
+<meta property="og:image" content="${esc(img)}">
+<meta property="og:type" content="website">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<script>location.replace('/#p=${esc(req.params.id)}')</script>
+</head><body><a href="/#p=${esc(req.params.id)}">Ouvrir la carte</a></body></html>`);
+});
+
+// QR code du site (pour l'affiche imprimable)
+app.get('/qr.svg', async (req, res) => {
+  const svg = await QRCode.toString(BASE_URL, { type: 'svg', margin: 1, width: 512 });
+  res.type('image/svg+xml').send(svg);
+});
+
+app.use('/uploads', express.static(UP_DIR, { maxAge: '1d', immutable: true }));
+app.use('/vendor/leaflet', express.static(path.join(__dirname, 'node_modules', 'leaflet', 'dist'), { maxAge: '30d' }));
+app.use(express.static(path.join(__dirname, 'public'), { maxAge: '5m' }));
+
+// ---------- nettoyage : TTL 24 h public, purge définitive à 72 h ----------
+async function purgePing(id) {
+  await q('DELETE FROM ping_updates WHERE ping_id=?', [id]);
+  await q('DELETE FROM arrivals WHERE ping_id=?', [id]);
+  await q('DELETE FROM reports WHERE ping_id=?', [id]);
+  await q('DELETE FROM contact_requests WHERE ping_id=?', [id]);
+  await q('DELETE FROM pings WHERE id=?', [id]);
+}
+async function cleanup() {
+  try {
+    const old = await q(`SELECT id, photo, audio FROM pings WHERE created_at <= NOW() - INTERVAL ${PURGE_H} HOUR`);
+    for (const p of old) { deleteFiles(p); await purgePing(p.id); }
+    await q(`DELETE FROM contact_requests WHERE created_at <= NOW() - INTERVAL ${TTL_H} HOUR`);
+    await q(`DELETE FROM watchers WHERE updated_at <= NOW() - INTERVAL 30 DAY`);
+  } catch (e) { console.error('cleanup:', e.message); }
+}
+
+// ---------- démarrage ----------
+init().then(() => {
+  setInterval(cleanup, 600000).unref();
+  cleanup();
+  const port = Number(process.env.PORT) || 3000;
+  app.listen(port, () => {
+    console.log(`Entraide Feu sur le port ${port}`);
+    console.log(`Admin : ${BASE_URL}/admin.html?key=${ADMIN_KEY}`);
+  });
+}).catch(e => { console.error('Init BDD impossible :', e.message); process.exit(1); });
