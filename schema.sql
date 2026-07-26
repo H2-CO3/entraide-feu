@@ -20,6 +20,9 @@ CREATE TABLE IF NOT EXISTS pings (
   lng         DECIMAL(9,6) NOT NULL,
   photo       VARCHAR(64) DEFAULT NULL,
   audio       VARCHAR(64) DEFAULT NULL,
+  places      SMALLINT DEFAULT NULL,           -- refuges : nombre de places
+  animals     TINYINT(1) DEFAULT NULL,         -- refuges : animaux acceptés
+  is_full     TINYINT(1) NOT NULL DEFAULT 0,   -- refuges : complet (reste affiché)
   status      ENUM('open','closed') NOT NULL DEFAULT 'open',
   close_code  CHAR(4) NOT NULL,
   hidden      TINYINT(1) NOT NULL DEFAULT 0,
@@ -48,6 +51,10 @@ CREATE TABLE IF NOT EXISTS arrivals (
   created_at  TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP,
   PRIMARY KEY (ping_id, helper_hash)
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;
+
+ALTER TABLE pings ADD COLUMN IF NOT EXISTS places SMALLINT DEFAULT NULL;
+ALTER TABLE pings ADD COLUMN IF NOT EXISTS animals TINYINT(1) DEFAULT NULL;
+ALTER TABLE pings ADD COLUMN IF NOT EXISTS is_full TINYINT(1) NOT NULL DEFAULT 0;
 
 ALTER TABLE arrivals ADD COLUMN IF NOT EXISTS lat DECIMAL(9,6) DEFAULT NULL;
 ALTER TABLE arrivals ADD COLUMN IF NOT EXISTS lng DECIMAL(9,6) DEFAULT NULL;

@@ -183,4 +183,5 @@ input[type=text], input[type=tel], textarea {
   position: absolute; top: -6px; right: -10px; background: #2e9e5b; color: #fff;
   font-size: .62rem; font-weight: 800; border-radius: 999px; padding: 1px 5px; font-family: system-ui;
 }
+.pin .cnt.full { background: #d64541; filter: none; }
 .pin.closedk { filter: grayscale(1); }

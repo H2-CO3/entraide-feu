@@ -51,6 +51,9 @@ server.js (Express)
 - `pings` — fiche : famille (`besoin`/`offre`), type (humain/matériel/médical/
   collecte/refuge), titre, message public, **message privé** (visible uniquement
   émetteur + engagés), position, photo/vocal, statut, code de clôture, `hidden`.
+  Refuges citoyens : `places`, `animals`, `is_full` (complet = affiché mais
+  non sollicitable ; distinct de la clôture). Le « j'arrive » devient
+  « demander à rejoindre » sur un refuge — même mécanique, mêmes tables.
 - `arrivals` — « j'arrive » : ETA, téléphone (visible émetteur seul), **position
   du dépanneur** (visible émetteur + lui-même, bornée à 300 km du ping).
 - `ping_updates` — mises à jour horodatées ajoutées par l'émetteur.

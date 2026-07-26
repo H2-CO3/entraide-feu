@@ -32,6 +32,9 @@
       <p class="lead">Cet outil ne remplace pas les secours.</p>
       <p class="warn">Urgence vitale → appelez le <a href="tel:18">18</a> ou le <a href="tel:112">112</a>.<br><br>
       N'allez <b>jamais</b> en zone dangereuse ou évacuée.</p>
+      <p class="small muted">🛰️ Les points rouges sur la carte sont les détections satellites de la NASA :
+      plusieurs heures de latence, <b>indicatifs seulement</b> — ne vous y fiez jamais pour votre sécurité.
+      Les consignes officielles (préfecture, FR-Alert) priment toujours.</p>
       <button class="btn big" id="obNext2">J'ai compris</button>
       <p class="ob-dots">○ ● ○ ○</p>
     </div>
@@ -63,7 +66,8 @@
       <p class="ob-emoji">🤝</p>
       <h1>On commence&nbsp;?</h1>
       <button class="btn big need" id="obNeed">🆘 Besoin d'aide</button>
-      <button class="btn big help" id="obHelp">💪 Je dépanne</button>
+      <button class="btn big help" id="obHelp">💪 Je dépanne <span class="small">(alertes)</span></button>
+      <button class="btn big" id="obRefuge">🏠 Ouvrir un refuge</button>
       <button class="linklike" id="obSkip">Juste voir la carte</button>
     </div>
   </div>
@@ -119,6 +123,12 @@
   <div class="modal">
     <h2 id="emitTitle">Émettre un besoin</h2>
     <div class="chips" id="emitTypes"></div>
+    <div id="refugeFields" class="hidden">
+      <div class="row">
+        <input id="refugePlaces" type="number" inputmode="numeric" min="1" max="500" placeholder="Nombre de places *" style="flex:1">
+        <button class="chip" id="refugeAnimals" style="flex:1">🐾 Animaux acceptés</button>
+      </div>
+    </div>
     <input id="emitTitleInput" type="text" maxlength="80" placeholder="Titre court (ex : besoin d'AdBlue pour camion pompier) *">
     <textarea id="emitMsg" maxlength="1000" rows="3" placeholder="Détails publics : quoi, combien, où se retrouver…"></textarea>
     <textarea id="emitPriv" maxlength="500" rows="2" placeholder="🔒 Partie privée (adresse exacte, code, téléphone…) — visible uniquement des personnes qui viennent"></textarea>
@@ -146,11 +156,6 @@
       <button class="chip" data-v="materiel">📦 Matériel</button>
       <button class="chip" data-v="medical">⚕️ Médical</button>
     </div>
-    <p class="small muted">M'alerter aussi pour :</p>
-    <div class="chips" id="helpOffres">
-      <button class="chip" data-v="collecte">📥 Collectes</button>
-      <button class="chip" data-v="refuge">🏠 Refuges</button>
-    </div>
     <label class="rangeLabel">Rayon d'alerte : <b id="helpRadiusVal">20 km</b>
       <input type="range" id="helpRadius" min="2" max="100" value="20">
     </label>
@@ -159,7 +164,7 @@
     Elle n'est partagée qu'avec un émetteur précis, au moment où vous cliquez «&nbsp;j'arrive&nbsp;» sur sa fiche.</p>
     <p class="small muted" id="helpIosHint" hidden>📱 Sur iPhone : ajoutez d'abord le site à l'écran d'accueil (Partager → Sur l'écran d'accueil) pour recevoir les notifications.</p>
     <div class="row">
-      <button class="btn ghost small-btn" id="helpOffer">➕ Déclarer collecte / refuge</button>
+      <button class="btn ghost small-btn" id="helpOffer">🏠 Ouvrir un refuge</button>
     </div>
     <div class="row">
       <button class="btn ghost" id="helpCancel">Fermer</button>
@@ -187,7 +192,8 @@
     <h2>ℹ️ Légende</h2>
     <ul class="legend">
       <li>🙋 📦 ⚕️ — <b>Besoins</b> émis par les habitants et les équipes sur place</li>
-      <li>📥 🏠 — <b>Assistance</b> citoyenne : points de collecte, refuges</li>
+      <li>📥 🏠 — <b>Assistance</b> : refuges citoyens (places, animaux), collectes</li>
+      <li>🏠<span class="muted">grisé</span> ⛔ — Refuge <b>complet</b> (inutile de demander, mais il existe)</li>
       <li><span class="offpin-mini">🏠</span> — <b>Point officiel</b> (préfecture, mairie) : hébergement, collecte, animaux</li>
       <li>🚗 — Dépanneur en route vers l'une de <b>vos</b> fiches (visible de vous seul)</li>
       <li><span class="fire-mini"></span> — Détections satellites NASA du <b id="fireDate"></b> (latence de plusieurs heures — indicatif)</li>

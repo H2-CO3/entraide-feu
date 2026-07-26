@@ -251,6 +251,7 @@ app.get('/api/state', async (req, res) => {
     const engaged = mine || list.some(a => a.helper_hash === req.hash);
     return {
       id: p.id, kind: p.kind, type: p.type, title: p.title, message: p.message,
+      places: p.places, animals: p.animals == null ? null : !!p.animals, isFull: !!p.is_full,
       // partie privée : réservée à l'émetteur et à ceux qui ont dit « j'arrive »
       hasPrivate: !!p.private_message,
       privateMessage: engaged ? p.private_message : undefined,
@@ -318,8 +319,11 @@ app.post('/api/pings', limited('create', 20), upload.fields([{ name: 'photo', ma
   const code = String(crypto.randomInt(0, 10000)).padStart(4, '0');
   const photo = saveUpload(req.files?.photo?.[0], 'photo');
   const audio = saveUpload(req.files?.audio?.[0], 'audio');
-  await q('INSERT INTO pings (id, owner_hash, kind, type, title, message, private_message, lat, lng, photo, audio, close_code) VALUES (?,?,?,?,?,?,?,?,?,?,?,?)',
-    [id, req.hash, kind, type, title, message || null, privMsg || null, lat, lng, photo, audio, code]);
+  // champs structurés des refuges citoyens
+  const places = type === 'refuge' && isFinite(parseInt(req.body.places)) ? Math.min(500, Math.max(1, parseInt(req.body.places))) : null;
+  const animals = type === 'refuge' ? (req.body.animals === '1' ? 1 : 0) : null;
+  await q('INSERT INTO pings (id, owner_hash, kind, type, title, message, private_message, lat, lng, photo, audio, close_code, places, animals) VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?)',
+    [id, req.hash, kind, type, title, message || null, privMsg || null, lat, lng, photo, audio, code, places, animals]);
   pushWatchers({ id, owner_hash: req.hash, kind, type, title, lat, lng }).catch(() => {});
   res.json({ id, closeCode: code });
 });
@@ -383,6 +387,14 @@ app.post('/api/pings/:id/close', limited('act', 120), async (req, res) => {
   }
   await q("UPDATE pings SET status='closed', closed_at=NOW() WHERE id=?", [p.id]);
   if (p.kind === 'besoin') await q("UPDATE stats SET v=v+1 WHERE k='resolved'");
+  res.json({ ok: true });
+});
+
+// Basculer complet / places disponibles (refuges, émetteur uniquement)
+app.post('/api/pings/:id/full', limited('act', 120), async (req, res) => {
+  const p = (await q("SELECT * FROM pings WHERE id=? AND status='open'", [req.params.id]))[0];
+  if (!p || p.owner_hash !== req.hash) return res.status(403).json({ error: 'Réservé à l’émetteur.' });
+  await q('UPDATE pings SET is_full=? WHERE id=?', [req.body.full ? 1 : 0, p.id]);
   res.json({ ok: true });
 });
 

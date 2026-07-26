@@ -102,15 +102,7 @@ function setFireLayer(on) {
   fireOn = on;
   fireLayers.forEach(l => on ? l.addTo(map) : l.remove());
   $('#fireToggle')?.classList.toggle('on', on);
-  maybeFireCaveat();
-}
-function maybeFireCaveat() {
-  // l'avertissement satellites n'apparaît que carte visible (jamais par-dessus l'onboarding)
-  if (!fireOn || sessionStorage.getItem('fireCaveat')) return;
-  // pas encore onboardé (ou onboarding rejoué à l'écran) → on attend la carte
-  if (!localStorage.getItem('onboarded') || !$('#onboarding').classList.contains('hidden')) return;
-  sessionStorage.setItem('fireCaveat', '1');
-  toast('🛰️ Points chauds satellites NASA — indicatifs, latence de plusieurs heures. Ne vous y fiez pas pour votre sécurité.');
+  // le disclaimer satellites est dit une fois pour toutes dans l'onboarding
 }
 
 function render() {
@@ -126,8 +118,9 @@ function render() {
     if (filter !== 'all' && p.kind !== filter) continue;
     keep.add(p.id);
     const meta = TYPE_META[p.type];
-    const cnt = p.arrivals.length ? `<span class="cnt">${p.arrivals.length}</span>` : '';
-    const icon = L.divIcon({ className: '', html: `<div class="pin">${meta.emoji}${cnt}</div>`, iconSize: [30, 30], iconAnchor: [15, 15] });
+    const cnt = p.isFull ? '<span class="cnt full">⛔</span>'
+      : p.arrivals.length ? `<span class="cnt">${p.arrivals.length}</span>` : '';
+    const icon = L.divIcon({ className: '', html: `<div class="pin${p.isFull ? ' closedk' : ''}">${meta.emoji}${cnt}</div>`, iconSize: [30, 30], iconAnchor: [15, 15] });
     if (markers.has(p.id)) {
       markers.get(p.id).setIcon(icon).setLatLng([p.lat, p.lng]);
     } else {
@@ -268,8 +261,12 @@ function renderSheet(id, soft) {
   const zone = inDangerZone(p.lat, p.lng);
   const myOut = state.contact.outgoing.find(c => c.pingId === p.id);
 
+  const isRefuge = p.type === 'refuge';
   let html = `<h3>${meta.emoji} ${esc(p.title)}</h3>
+    ${p.isFull ? '<p class="warn" style="text-align:center"><b>⛔ COMPLET</b> — inutile de demander pour le moment</p>' : ''}
     <div><span class="badge" style="background:${meta.color}">${p.kind === 'besoin' ? '🆘 Besoin' : '🛟 Assistance'} — ${meta.label}</span>
+    ${isRefuge && p.places ? `<span class="badge">🛏️ ${p.places} places</span>` : ''}
+    ${isRefuge && p.animals != null ? `<span class="badge">${p.animals ? '🐾 animaux acceptés' : '🚫 pas d’animaux'}</span>` : ''}
     <span class="badge">${timeAgo(p.at)}</span>
     ${p.ownerName ? `<span class="badge">par ${esc(p.ownerName)}</span>` : ''}
     ${p.ownerProf ? `<span class="badge prof">${PROF_LABEL[p.ownerProf]}</span>` : ''}
@@ -287,7 +284,7 @@ function renderSheet(id, soft) {
   for (const u of p.updates) html += `<div class="updates"><div>🔄 ${esc(u.text)} <span class="muted small">(${timeAgo(u.at)})</span></div></div>`;
 
   if (p.arrivals.length) {
-    html += `<div class="arrivals"><b>🚗 ${p.arrivals.length} en route :</b><ul>`;
+    html += `<div class="arrivals"><b>${isRefuge ? '🙋 ' + p.arrivals.length + ' demande(s)' : '🚗 ' + p.arrivals.length + ' en route'} :</b><ul>`;
     for (const a of p.arrivals) {
       html += `<li>${esc(a.name || 'Quelqu’un')}${a.prof ? ' <span class="badge prof">' + PROF_LABEL[a.prof] + '</span>' : ''}${a.eta ? ' — ' + esc(a.eta) : ''}${a.phone ? ` — <a href="tel:${esc(a.phone)}">📞 ${esc(a.phone)}</a>` : ''}</li>`;
     }
@@ -307,9 +304,14 @@ function renderSheet(id, soft) {
 
   if (p.mine) {
     act.innerHTML = `
+      ${isRefuge ? `<div class="row"><button class="btn ${p.isFull ? 'help' : 'ghost'}" id="fFull">${p.isFull ? '🟢 Rouvrir des places' : '⛔ Afficher complet'}</button></div>` : ''}
       <textarea id="fUpd" rows="2" maxlength="300" placeholder="Ajouter une mise à jour (ex : plus besoin d'eau, besoin de gants)"></textarea>
       <div class="row"><button class="btn ghost" id="fUpdBtn">🔄 Publier la mise à jour</button></div>
       <div class="row"><button class="btn ghost" id="fShare">📤 Partager</button><button class="btn" id="fClose">✅ Clôturer</button></div>`;
+    const fFull = $('#fFull');
+    if (fFull) fFull.onclick = async () => {
+      try { await api(`/api/pings/${p.id}/full`, { json: { full: !p.isFull } }); toast(p.isFull ? 'Refuge rouvert 🟢' : 'Refuge affiché complet ⛔'); poll(); } catch (e) { toast(e.message, true); }
+    };
     $('#fUpdBtn').onclick = async () => {
       const t = $('#fUpd').value.trim(); if (!t) return;
       try { await api(`/api/pings/${p.id}/update`, { json: { text: t } }); toast('Mise à jour publiée'); poll(); } catch (e) { toast(e.message, true); }
@@ -323,7 +325,7 @@ function renderSheet(id, soft) {
     act.innerHTML = `
       ${me?.posAt ? `<p class="small muted">📍 Position partagée avec l'émetteur ${timeAgo(me.posAt)}</p>` : ''}
       <div class="row"><button class="btn" id="fRefreshPos">📍 Actualiser ma position</button></div>
-      <div class="row"><button class="btn ghost" id="fCancelArr">🚫 Je ne peux plus venir</button></div>
+      <div class="row"><button class="btn ghost" id="fCancelArr">${isRefuge ? '🚫 Annuler ma demande' : '🚫 Je ne peux plus venir'}</button></div>
       <div class="row"><button class="btn ghost" id="fShare">📤 Partager</button><button class="btn ghost" id="fReport">⚠️ Signaler</button></div>`;
     $('#fRefreshPos').onclick = async () => {
       const pos = await getPosition();
@@ -333,6 +335,9 @@ function renderSheet(id, soft) {
     $('#fCancelArr').onclick = async () => {
       try { await api(`/api/pings/${p.id}/arrive`, { json: { cancel: true } }); toast('Prise en charge annulée'); poll(); } catch (e) { toast(e.message, true); }
     };
+  } else if (p.isFull) {
+    // refuge complet : pas de bouton de demande, mais partager/signaler restent
+    act.innerHTML = `<div class="row"><button class="btn ghost" id="fShare">📤 Partager</button><button class="btn ghost" id="fReport">⚠️ Signaler</button></div>`;
   } else {
     act.innerHTML = `
       <div id="arrForm" class="hidden">
@@ -345,7 +350,7 @@ function renderSheet(id, soft) {
         <p class="small muted">📍 Votre position sera partagée avec l'émetteur (et lui seul) pour qu'il vous voie arriver.</p>
         <button class="btn" id="arrGo">✅ Confirmer : j'arrive</button>
       </div>
-      <button class="btn help" id="fArrive">🚗 J'arrive</button>
+      <button class="btn help" id="fArrive">${isRefuge ? '🙋 Demander à rejoindre' : '🚗 J\'arrive'}</button>
       <div class="row">
         <button class="btn ghost" id="fAskPhone">📞 Demander son numéro</button>
         <button class="btn ghost" id="fShare">📤 Partager</button>
@@ -395,12 +400,18 @@ function sharePing(p) {
 /* ---------- émission ---------- */
 function openEmit(kind, prefill) {
   photoBlob = null; recBlob = null; $('#emitAttach').textContent = '';
-  $('#emitTitle').textContent = kind === 'besoin' ? '🆘 Émettre un besoin' : '🛟 Proposer une assistance';
-  const types = kind === 'besoin' ? ['humain', 'materiel', 'medical'] : ['collecte', 'refuge'];
+  const refuge = kind === 'offre'; // l'offre citoyenne = ouvrir un refuge (les collectes sont officielles)
+  $('#emitTitle').textContent = refuge ? '🏠 Ouvrir un refuge' : '🆘 Émettre un besoin';
+  const types = refuge ? ['refuge'] : ['humain', 'materiel', 'medical'];
   $('#emitTypes').innerHTML = types.map(t => `<button class="chip" data-v="${t}">${TYPE_META[t].emoji} ${TYPE_META[t].label}</button>`).join('');
   chipsToggle($('#emitTypes'), false);
+  $('#emitTypes').classList.toggle('hidden', refuge); // un seul type possible → pas de choix à montrer
+  $('#refugeFields').classList.toggle('hidden', !refuge);
   $('#emitTypes .chip').classList.add('on');
+  $('#refugePlaces').value = prefill?.places || '';
+  $('#refugeAnimals').classList.toggle('on', !!prefill?.animals);
   $('#emitTitleInput').value = prefill?.title || '';
+  $('#emitTitleInput').placeholder = refuge ? 'Titre court (ex : maison avec 2 chambres à Mios) *' : "Titre court (ex : besoin d'AdBlue pour camion pompier) *";
   $('#emitMsg').value = prefill?.message || '';
   $('#emitPriv').value = prefill?.private_message || '';
   if (prefill?.type) $('#emitTypes').querySelectorAll('.chip').forEach(c => c.classList.toggle('on', c.dataset.v === prefill.type));
@@ -454,14 +465,20 @@ function setupEmit() {
     } catch { toast('Micro non disponible', true); }
   };
 
+  $('#refugeAnimals').onclick = () => $('#refugeAnimals').classList.toggle('on');
   $('#emitPlace').onclick = () => {
     const type = chipsValues($('#emitTypes'))[0];
     const title = $('#emitTitleInput').value.trim();
     if (!type) return toast('Choisissez une catégorie', true);
     if (!title) return toast('Un titre court est requis', true);
+    if (type === 'refuge' && !(+$('#refugePlaces').value >= 1)) return toast('Indiquez le nombre de places', true);
     const kind = $('#emitModal').dataset.kind;
     $('#emitModal').classList.add('hidden');
-    startPlacing({ kind, type, title, message: $('#emitMsg').value.trim(), private_message: $('#emitPriv').value.trim() },
+    startPlacing({
+      kind, type, title, message: $('#emitMsg').value.trim(), private_message: $('#emitPriv').value.trim(),
+      places: type === 'refuge' ? +$('#refugePlaces').value : null,
+      animals: type === 'refuge' ? $('#refugeAnimals').classList.contains('on') : null,
+    },
       parseFloat($('#emitModal').dataset.prefillLat) || null,
       parseFloat($('#emitModal').dataset.prefillLng) || null);
   };
@@ -508,6 +525,8 @@ async function submitPing() {
   fd.append('kind', d.kind); fd.append('type', d.type);
   fd.append('title', d.title); fd.append('message', d.message);
   fd.append('private_message', d.private_message || '');
+  if (d.places) fd.append('places', d.places);
+  if (d.animals != null) fd.append('animals', d.animals ? '1' : '0');
   fd.append('lat', ll.lat.toFixed(6)); fd.append('lng', ll.lng.toFixed(6));
   if (photoBlob) fd.append('photo', photoBlob, 'photo.jpg');
   if (recBlob) fd.append('audio', recBlob, 'voice.' + (recMime.includes('mp4') ? 'm4a' : recMime.includes('ogg') ? 'ogg' : 'webm'));
@@ -558,14 +577,13 @@ function currentWatchPrefs() {
 /* ---------- panneau je dépanne ---------- */
 function setupHelp() {
   const panel = $('#helpPanel');
-  chipsToggle($('#helpCats')); chipsToggle($('#helpOffres'));
+  chipsToggle($('#helpCats'));
   $('#helpRadius').oninput = e => $('#helpRadiusVal').textContent = e.target.value + ' km';
   $('#btnHelp').onclick = () => {
     const w = state?.me?.watch;
     if (w) {
       const watched = w.cats.split(',');
       $('#helpCats').querySelectorAll('.chip').forEach(c => c.classList.toggle('on', watched.includes(c.dataset.v)));
-      $('#helpOffres').querySelectorAll('.chip').forEach(c => c.classList.toggle('on', watched.includes(c.dataset.v)));
       $('#helpRadius').value = w.radius_km; $('#helpRadiusVal').textContent = w.radius_km + ' km';
       $('#helpNotif').checked = !!w.subscribed;
     }
@@ -583,7 +601,7 @@ function setupHelp() {
     } catch (e) { toast(e.message, true); }
   };
   $('#helpSave').onclick = async () => {
-    const cats = [...chipsValues($('#helpCats')), ...chipsValues($('#helpOffres'))];
+    const cats = chipsValues($('#helpCats'));
     if (!cats.length) return toast('Cochez au moins une catégorie à surveiller', true);
     const wantNotif = $('#helpNotif').checked;
     // la position ne sert qu'à filtrer les alertes dans le rayon choisi
@@ -654,9 +672,10 @@ function setupOnboarding() {
     localStorage.setItem('onboarded', '1');
     obGoto(5);
   };
-  $('#obNeed').onclick = () => { $('#onboarding').classList.add('hidden'); maybeFireCaveat(); openEmit('besoin'); };
-  $('#obHelp').onclick = () => { $('#onboarding').classList.add('hidden'); maybeFireCaveat(); $('#btnHelp').click(); };
-  $('#obSkip').onclick = () => { $('#onboarding').classList.add('hidden'); maybeFireCaveat(); };
+  $('#obNeed').onclick = () => { $('#onboarding').classList.add('hidden'); openEmit('besoin'); };
+  $('#obHelp').onclick = () => { $('#onboarding').classList.add('hidden'); $('#btnHelp').click(); };
+  $('#obRefuge').onclick = () => { $('#onboarding').classList.add('hidden'); openEmit('offre'); };
+  $('#obSkip').onclick = () => $('#onboarding').classList.add('hidden');
 }
 
 /* ---------- init ---------- */
