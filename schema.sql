@@ -71,11 +71,18 @@ CREATE TABLE IF NOT EXISTS contact_requests (
   id             INT AUTO_INCREMENT PRIMARY KEY,
   ping_id        CHAR(10) NOT NULL,
   requester_hash CHAR(64) NOT NULL,
+  target_hash    CHAR(64) NOT NULL DEFAULT '',   -- vide = l'émetteur du ping, sinon hash du dépanneur visé
   status         ENUM('pending','accepted','declined') NOT NULL DEFAULT 'pending',
   phone          VARCHAR(25) DEFAULT NULL,
+  message        VARCHAR(200) DEFAULT NULL,      -- mot court optionnel joint à la réponse
   created_at     TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP,
-  UNIQUE KEY uq_req (ping_id, requester_hash)
+  UNIQUE KEY uq_req3 (ping_id, requester_hash, target_hash)
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;
+
+ALTER TABLE contact_requests ADD COLUMN IF NOT EXISTS target_hash CHAR(64) NOT NULL DEFAULT '';
+ALTER TABLE contact_requests ADD COLUMN IF NOT EXISTS message VARCHAR(200) DEFAULT NULL;
+ALTER TABLE contact_requests DROP INDEX IF EXISTS uq_req;
+ALTER TABLE contact_requests ADD UNIQUE KEY IF NOT EXISTS uq_req3 (ping_id, requester_hash, target_hash);
 
 CREATE TABLE IF NOT EXISTS watchers (
   hash         CHAR(64) PRIMARY KEY,

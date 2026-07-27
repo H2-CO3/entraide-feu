@@ -76,8 +76,16 @@ démarré, et chaque testeur vide les données du site (ou fenêtre privée neuv
 2. A voit la bannière → teste **Refuser**. C re-demande ; A **partage** son numéro.
 
 - [ ] A voit « C (se déclare …) demande votre numéro » avec le titre de la fiche.
-- [ ] Refus : C voit « n'a pas souhaité partager ».
+- [ ] Refus : C voit « n'a pas souhaité partager » (+ message si renseigné).
 - [ ] Accord : C voit le numéro + bouton 📞 appeler ; D ne voit rien.
+
+**Sens inverse (B a dit « j'arrive » SANS numéro)** :
+3. A ouvre sa fiche → bouton « 📞 Demander son numéro » sur la ligne de B.
+4. B reçoit la bannière « A (émetteur) demande votre numéro » → accepte avec un
+   petit message, OU refuse avec un message (« pas de tel, j'y suis à 15h »).
+
+- [ ] A voit la réponse rattachée à la bonne ligne d'arrivée (numéro cliquable + message, ou refus + message).
+- [ ] Un tiers ne voit rien de tout cela dans `/api/state`.
 
 ## S6 — Vie de la fiche (A)
 1. A ajoute une mise à jour (« plus besoin de X »). 2. A clôture depuis « Mon SOS ».

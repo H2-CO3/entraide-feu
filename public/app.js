@@ -271,9 +271,10 @@ function renderBanners() {
   const cb = $('#contactBanner');
   if (pending.length) {
     const c = pending[0];
-    cb.innerHTML = `📞 <b>${esc(c.name || 'Quelqu’un')}</b>${c.prof ? ' <span class="badge prof">' + PROF_LABEL[c.prof] + '</span>' : ''}
+    cb.innerHTML = `📞 <b>${esc(c.name || 'Quelqu’un')}</b>${c.prof ? ' <span class="badge prof">' + PROF_LABEL[c.prof] + '</span>' : ''}${c.fromOwner ? ' (émetteur)' : ''}
       demande votre numéro pour «&nbsp;${esc(c.pingTitle)}&nbsp;»
       <input type="tel" id="cbPhone" placeholder="Votre numéro" autocomplete="tel">
+      <input type="text" id="cbMsg" maxlength="200" placeholder="Petit message (facultatif, avec ou sans numéro)">
       <div class="row">
         <button class="btn ghost" id="cbNo">Refuser</button>
         <button class="btn" id="cbYes">Partager</button>
@@ -282,10 +283,13 @@ function renderBanners() {
     $('#cbYes').onclick = async () => {
       const phone = $('#cbPhone').value.trim();
       if (phone.length < 6) return toast('Numéro invalide', true);
-      try { await api(`/api/contact/${c.id}/respond`, { json: { accept: true, phone } }); toast('Numéro partagé ✅'); poll(); }
+      try { await api(`/api/contact/${c.id}/respond`, { json: { accept: true, phone, message: $('#cbMsg').value.trim() } }); toast('Numéro partagé ✅'); lastBannerKey = null; poll(); }
       catch (e) { toast(e.message, true); }
     };
-    $('#cbNo').onclick = async () => { await api(`/api/contact/${c.id}/respond`, { json: { accept: false } }).catch(() => {}); poll(); };
+    $('#cbNo').onclick = async () => {
+      await api(`/api/contact/${c.id}/respond`, { json: { accept: false, message: $('#cbMsg').value.trim() } }).catch(() => {});
+      lastBannerKey = null; poll();
+    };
   } else cb.classList.add('hidden');
 
   // fiches expirées à re-déclarer
@@ -316,19 +320,20 @@ function renderSheet(id, soft) {
     if (!soft) { el.innerHTML = '<p class="muted">Cette publication n’existe plus (clôturée ou expirée).</p>'; lastSheetSnap = null; }
     return;
   }
+  const snapOf = () => JSON.stringify([p, state.contact.outgoing.filter(c => c.pingId === id)]);
   if (soft) {
     // jamais de re-rendu pendant une saisie dans la fiche, ni si rien n'a changé
     const active = document.activeElement;
     if (active && /INPUT|TEXTAREA/.test(active.tagName) && $('#sheet').contains(active)) return;
-    const snap = JSON.stringify([p, state.contact.outgoing.find(c => c.pingId === id)]);
+    const snap = snapOf();
     if (snap === lastSheetSnap) return;
     lastSheetSnap = snap;
   } else {
-    lastSheetSnap = JSON.stringify([p, state.contact.outgoing.find(c => c.pingId === id)]);
+    lastSheetSnap = snapOf();
   }
   const meta = TYPE_META[p.type];
   const zone = inDangerZone(p.lat, p.lng);
-  const myOut = state.contact.outgoing.find(c => c.pingId === p.id);
+  const myOut = state.contact.outgoing.find(c => c.pingId === p.id && !c.aid); // ma demande vers l'émetteur
 
   const isRefuge = p.type === 'refuge';
   let html = `<h3>${meta.emoji} ${esc(p.title)}</h3>
@@ -355,20 +360,35 @@ function renderSheet(id, soft) {
   if (p.arrivals.length) {
     html += `<div class="arrivals"><b>${isRefuge ? '🙋 ' + p.arrivals.length + ' demande(s)' : '🚗 ' + p.arrivals.length + ' en route'} :</b><ul>`;
     for (const a of p.arrivals) {
-      html += `<li>${esc(a.name || 'Quelqu’un')}${a.prof ? ' <span class="badge prof">' + PROF_LABEL[a.prof] + '</span>' : ''}${a.eta ? ' — ' + esc(a.eta) : ''}${a.phone ? ` — <a href="tel:${esc(a.phone)}">📞 ${esc(a.phone)}</a>` : ''}</li>`;
+      let contactBit = '';
+      if (a.phone) contactBit = ` — <a href="tel:${esc(a.phone)}">📞 ${esc(a.phone)}</a>`;
+      else if (p.mine && a.aid && !a.self) {
+        // pas de numéro laissé : l'émetteur peut le demander, le dépanneur reste libre
+        const o = state.contact.outgoing.find(c => c.pingId === p.id && c.aid === a.aid);
+        if (!o) contactBit = ` <button class="btn ghost small-btn askNum" data-aid="${esc(a.aid)}">📞 Demander son numéro</button>`;
+        else if (o.status === 'pending') contactBit = ' — <span class="muted small">📞 demande envoyée…</span>';
+        else if (o.status === 'accepted') contactBit = ` — <a href="tel:${esc(o.phone)}">📞 ${esc(o.phone)}</a>${o.message ? ` <span class="muted small">«&nbsp;${esc(o.message)}&nbsp;»</span>` : ''}`;
+        else contactBit = ` — <span class="muted small">n'a pas partagé son numéro${o.message ? ' : «&nbsp;' + esc(o.message) + '&nbsp;»' : ''}</span>`;
+      }
+      html += `<li>${esc(a.name || 'Quelqu’un')}${a.prof ? ' <span class="badge prof">' + PROF_LABEL[a.prof] + '</span>' : ''}${a.eta ? ' — ' + esc(a.eta) : ''}${contactBit}</li>`;
     }
     html += '</ul></div>';
   }
   if (myOut?.status === 'accepted' && myOut.phone) {
-    html += `<p>✅ Numéro partagé : <a href="tel:${esc(myOut.phone)}" class="btn small-btn" style="display:inline-block">📞 Appeler ${esc(myOut.phone)}</a></p>`;
+    html += `<p>✅ Numéro partagé : <a href="tel:${esc(myOut.phone)}" class="btn small-btn" style="display:inline-block">📞 Appeler ${esc(myOut.phone)}</a>${myOut.message ? `<br><span class="muted small">«&nbsp;${esc(myOut.message)}&nbsp;»</span>` : ''}</p>`;
   } else if (myOut?.status === 'pending') {
     html += `<p class="muted small">📞 Demande de numéro envoyée, en attente…</p>`;
   } else if (myOut?.status === 'declined') {
-    html += `<p class="muted small">L’émetteur n’a pas souhaité partager son numéro.</p>`;
+    html += `<p class="muted small">L’émetteur n’a pas souhaité partager son numéro${myOut.message ? ' : «&nbsp;' + esc(myOut.message) + '&nbsp;»' : ''}.</p>`;
   }
 
   html += `<div id="fActions"></div>`;
   el.innerHTML = html;
+  // demandes de numéro ciblées vers les dépanneurs sans téléphone (émetteur)
+  el.querySelectorAll('.askNum').forEach(b => b.onclick = async () => {
+    try { await api(`/api/pings/${p.id}/contact-request`, { json: { aid: b.dataset.aid } }); toast('Demande envoyée 📞'); poll(); }
+    catch (e) { toast(e.message, true); }
+  });
   const act = $('#fActions');
 
   if (p.mine) {
@@ -376,7 +396,9 @@ function renderSheet(id, soft) {
       ${isRefuge ? `<div class="row"><button class="btn ${p.isFull ? 'help' : 'ghost'}" id="fFull">${p.isFull ? '🟢 Rouvrir des places' : '⛔ Afficher complet'}</button></div>` : ''}
       <textarea id="fUpd" rows="2" maxlength="300" placeholder="Ajouter une mise à jour (ex : plus besoin d'eau, besoin de gants)"></textarea>
       <div class="row"><button class="btn ghost" id="fUpdBtn">🔄 Publier la mise à jour</button></div>
-      <div class="row"><button class="btn ghost" id="fShare">📤 Partager</button><button class="btn" id="fClose">✅ Clôturer</button></div>`;
+      <div class="row"><button class="btn ghost" id="fShare">📤 Partager</button><button class="btn" id="fClose">✅ Clôturer</button></div>
+      <p class="small muted">🔑 Code de secours : <b>${esc(p.closeCode || '')}</b> — si vous perdez cet appareil,
+      ce code permet de clôturer ${isRefuge ? 'ce refuge' : 'ce SOS'} depuis n'importe quel autre.</p>`;
     const fFull = $('#fFull');
     if (fFull) fFull.onclick = async () => {
       try { await api(`/api/pings/${p.id}/full`, { json: { full: !p.isFull } }); toast(p.isFull ? 'Refuge rouvert 🟢' : 'Refuge affiché complet ⛔'); poll(); } catch (e) { toast(e.message, true); }
@@ -604,7 +626,6 @@ async function submitPing() {
     const r = await api('/api/pings', { method: 'POST', body: fd });
     stopPlacing();
     $('#doneTitle').textContent = d.kind === 'besoin' ? '✅ SOS publié' : '✅ Refuge publié';
-    $('#doneCode').textContent = r.closeCode;
     $('#doneModal').classList.remove('hidden');
     $('#doneShare').onclick = () => sharePing({ id: r.id, title: d.title });
     poll();
@@ -644,6 +665,26 @@ function currentWatchPrefs() {
   };
 }
 
+// Diagnostic notifications : dire POURQUOI ça ne marche pas et comment débloquer
+// (un refus de permission ne peut jamais être contourné par le site — choix des navigateurs)
+function notifDiagnostic() {
+  if (!window.isSecureContext)
+    return '🔒 Connexion non sécurisée : notifications impossibles. Utilisez l\'adresse HTTPS du site.';
+  if (isIosNoPush())
+    return '📱 iPhone : ajoutez d\'abord le site à l\'écran d\'accueil (Partager → Sur l\'écran d\'accueil), puis revenez activer.';
+  if (!('serviceWorker' in navigator) || !('PushManager' in window) || typeof Notification === 'undefined')
+    return '❌ Ce navigateur ne prend pas en charge les notifications. Astuce : onglet ouvert, les alertes s\'affichent quand même dans la page.';
+  switch (Notification.permission) {
+    case 'granted':
+      return state?.me?.watch?.subscribed ? '✅ Notifications actives sur cet appareil.'
+        : '🟡 Autorisées — cliquez Enregistrer pour les activer.';
+    case 'denied':
+      return '🚫 Bloquées pour ce site. Pour débloquer : cadenas (ou ⋮) dans la barre d\'adresse → Autorisations → Notifications → Autoriser, puis revenez et ré-enregistrez. En attendant, onglet ouvert = alertes dans la page.';
+    default:
+      return '🔔 Le navigateur demandera votre accord au moment d\'enregistrer.';
+  }
+}
+
 /* ---------- panneau je dépanne ---------- */
 function setupHelp() {
   const panel = $('#helpPanel');
@@ -657,7 +698,8 @@ function setupHelp() {
       $('#helpRadius').value = w.radius_km; $('#helpRadiusVal').textContent = w.radius_km + ' km';
       $('#helpNotif').checked = !!w.subscribed;
     }
-    $('#helpIosHint').hidden = !isIosNoPush();
+    $('#helpIosHint').hidden = true; // remplacé par le diagnostic détaillé
+    $('#notifStatus').textContent = notifDiagnostic();
     panel.classList.remove('hidden');
   };
   $('#helpCancel').onclick = () => panel.classList.add('hidden');
@@ -690,6 +732,8 @@ function setupHelp() {
         json: { cats, lat: pos.lat, lng: pos.lng, radiusKm: +$('#helpRadius').value, subscription: sub || undefined },
       });
       toast('Alertes configurées 🔔');
+      $('#notifStatus').textContent = notifDiagnostic();
+      if (wantNotif && !sub) return; // panneau laissé ouvert : le diagnostic explique quoi faire
       panel.classList.add('hidden');
       poll();
     } catch (e) { toast(e.message, true); }

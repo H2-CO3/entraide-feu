@@ -104,6 +104,9 @@ function distKm(la1, lo1, la2, lo2) {
 const newId = () => crypto.randomBytes(8).toString('base64url').replace(/[-_]/g, 'a').slice(0, 10);
 const cleanPhone = p => { const s = String(p || '').replace(/[^+0-9 ]/g, '').trim().slice(0, 25); return s.length >= 6 ? s : null; };
 const esc = s => String(s ?? '').replace(/[&<>"']/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
+// identifiant opaque d'un dépanneur au sein d'un ping : permet à l'émetteur de
+// cibler une demande de numéro sans jamais voir le hash d'identité du dépanneur
+const aidOf = (pingId, helperHash) => crypto.createHmac('sha256', SECRET).update(`aid|${pingId}|${helperHash}`).digest('hex').slice(0, 12);
 
 // ---------- push ----------
 async function pushTo(hash, payload) {
@@ -294,7 +297,8 @@ app.get('/api/state', async (req, res) => {
     q(`SELECT c.*, p.title AS ping_title, p.owner_hash, ri.name AS requester_name, ri.profession AS requester_prof
        FROM contact_requests c JOIN pings p ON p.id=c.ping_id
        LEFT JOIN identities ri ON ri.hash=c.requester_hash
-       WHERE (p.owner_hash=? OR c.requester_hash=?) AND c.created_at > NOW() - INTERVAL ${TTL_H} HOUR`, [req.hash, req.hash]),
+       WHERE (c.requester_hash=? OR c.target_hash=? OR (c.target_hash='' AND p.owner_hash=?))
+         AND c.created_at > NOW() - INTERVAL ${TTL_H} HOUR`, [req.hash, req.hash, req.hash]),
     q('SELECT id, label, lat, lng, radius_m FROM zones'),
     q('SELECT COUNT(*) AS n FROM watchers WHERE subscription IS NOT NULL'),
     q("SELECT v FROM stats WHERE k='resolved'"),
@@ -316,6 +320,7 @@ app.get('/api/state', async (req, res) => {
     return {
       id: p.id, kind: p.kind, type: p.type, title: p.title, message: p.message,
       places: p.places, animals: p.animals == null ? null : !!p.animals, isFull: !!p.is_full,
+      closeCode: mine ? p.close_code : undefined, // le code de secours, visible du seul émetteur
       // partie privée : réservée à l'émetteur et à ceux qui ont dit « j'arrive »
       hasPrivate: !!p.private_message,
       privateMessage: engaged ? p.private_message : undefined,
@@ -327,6 +332,7 @@ app.get('/api/state', async (req, res) => {
         const self = a.helper_hash === req.hash;
         return {
           name: a.name, prof: a.profession, eta: a.eta, at: a.created_at, self,
+          aid: mine ? aidOf(p.id, a.helper_hash) : undefined, // cible d'une demande de numéro
           phone: mine ? a.phone : undefined, // le numéro laissé par un dépanneur n'est visible que de l'émetteur
           // la position d'un dépanneur n'est visible que de l'émetteur (et de lui-même)
           lat: (mine || self) && a.lat != null ? +a.lat : undefined,
@@ -337,14 +343,23 @@ app.get('/api/state', async (req, res) => {
     };
   });
 
-  // demandes de numéro : côté émetteur (à traiter) et côté demandeur (réponses)
+  // demandes de numéro, dans les deux sens : je suis destinataire (à traiter en
+  // bannière) et/ou demandeur (réponses reçues)
   const contact = { incoming: [], outgoing: [] };
   for (const c of myReqs) {
-    if (c.owner_hash === req.hash && c.requester_hash !== req.hash) {
-      contact.incoming.push({ id: c.id, pingId: c.ping_id, pingTitle: c.ping_title, status: c.status, name: c.requester_name, prof: c.requester_prof, at: c.created_at });
+    const iAmTarget = c.target_hash ? c.target_hash === req.hash
+      : (c.owner_hash === req.hash && c.requester_hash !== req.hash);
+    if (iAmTarget) {
+      contact.incoming.push({ id: c.id, pingId: c.ping_id, pingTitle: c.ping_title, status: c.status, name: c.requester_name, prof: c.requester_prof, fromOwner: !!c.target_hash, at: c.created_at });
     }
     if (c.requester_hash === req.hash) {
-      contact.outgoing.push({ pingId: c.ping_id, pingTitle: c.ping_title, status: c.status, phone: c.status === 'accepted' ? c.phone : undefined, at: c.created_at });
+      contact.outgoing.push({
+        pingId: c.ping_id, pingTitle: c.ping_title, status: c.status,
+        phone: c.status === 'accepted' ? c.phone : undefined,
+        message: c.status !== 'pending' ? c.message : undefined,
+        aid: c.target_hash ? aidOf(c.ping_id, c.target_hash) : undefined, // demande émetteur→dépanneur
+        at: c.created_at,
+      });
     }
   }
 
@@ -482,14 +497,30 @@ app.post('/api/pings/:id/report', limited('act', 60), async (req, res) => {
   res.json({ ok: true });
 });
 
-// Demander le numéro de l'émetteur
+// Demander un numéro — deux directions :
+//   sans aid : un visiteur demande le numéro de l'émetteur du ping
+//   avec aid : l'émetteur demande le numéro d'un dépanneur qui a dit « j'arrive »
 app.post('/api/pings/:id/contact-request', limited('act', 60), async (req, res) => {
   if (await isBanned(req.hash)) return res.status(403).json({ error: 'Accès suspendu.' });
   const p = (await q("SELECT * FROM pings WHERE id=? AND status='open' AND hidden=0", [req.params.id]))[0];
   if (!p) return res.status(404).json({ error: 'Ping introuvable.' });
-  if (p.owner_hash === req.hash) return res.status(400).json({ error: 'C’est votre propre ping.' });
-  await q('INSERT IGNORE INTO contact_requests (ping_id, requester_hash) VALUES (?,?)', [p.id, req.hash]);
   const who = (await q('SELECT name, profession FROM identities WHERE hash=?', [req.hash]))[0] || {};
+
+  if (req.body.aid) {
+    if (p.owner_hash !== req.hash) return res.status(403).json({ error: 'Réservé à l’émetteur.' });
+    const arr = await q('SELECT helper_hash FROM arrivals WHERE ping_id=?', [p.id]);
+    const target = arr.find(a => aidOf(p.id, a.helper_hash) === req.body.aid);
+    if (!target) return res.status(404).json({ error: 'Dépanneur introuvable.' });
+    await q('INSERT IGNORE INTO contact_requests (ping_id, requester_hash, target_hash) VALUES (?,?,?)', [p.id, req.hash, target.helper_hash]);
+    pushTo(target.helper_hash, {
+      title: `📞 ${who.name || 'L’émetteur'} demande votre numéro`,
+      body: p.title, url: `/#p=${p.id}`,
+    }).catch(() => {});
+    return res.json({ ok: true });
+  }
+
+  if (p.owner_hash === req.hash) return res.status(400).json({ error: 'C’est votre propre ping.' });
+  await q("INSERT IGNORE INTO contact_requests (ping_id, requester_hash, target_hash) VALUES (?,?,'')", [p.id, req.hash]);
   pushTo(p.owner_hash, {
     title: `📞 ${who.name || 'Quelqu’un'}${who.profession ? ' (se déclare ' + who.profession + ')' : ''} demande votre numéro`,
     body: p.title,
@@ -498,17 +529,21 @@ app.post('/api/pings/:id/contact-request', limited('act', 60), async (req, res) 
   res.json({ ok: true });
 });
 
-// Répondre à une demande de numéro (émetteur du ping)
+// Répondre à une demande de numéro (le destinataire seul) — accepter avec numéro,
+// ou refuser ; dans les deux cas un court message optionnel peut accompagner
 app.post('/api/contact/:reqId/respond', limited('act', 120), async (req, res) => {
   const c = (await q(`SELECT c.*, p.owner_hash, p.title FROM contact_requests c JOIN pings p ON p.id=c.ping_id WHERE c.id=?`, [req.params.reqId]))[0];
-  if (!c || c.owner_hash !== req.hash) return res.status(403).json({ error: 'Non autorisé.' });
+  const isTarget = c && (c.target_hash ? c.target_hash === req.hash : c.owner_hash === req.hash);
+  if (!isTarget) return res.status(403).json({ error: 'Non autorisé.' });
+  const message = String(req.body.message || '').trim().slice(0, 200) || null;
   if (req.body.accept) {
     const phone = cleanPhone(req.body.phone);
     if (!phone) return res.status(400).json({ error: 'Numéro invalide.' });
-    await q("UPDATE contact_requests SET status='accepted', phone=? WHERE id=?", [phone, c.id]);
+    await q("UPDATE contact_requests SET status='accepted', phone=?, message=? WHERE id=?", [phone, message, c.id]);
     pushTo(c.requester_hash, { title: '✅ Numéro partagé', body: `Pour « ${c.title} » — ouvrez la fiche.`, url: `/#p=${c.ping_id}` }).catch(() => {});
   } else {
-    await q("UPDATE contact_requests SET status='declined' WHERE id=?", [c.id]);
+    await q("UPDATE contact_requests SET status='declined', message=? WHERE id=?", [message, c.id]);
+    if (message) pushTo(c.requester_hash, { title: '📨 Réponse à votre demande', body: `« ${c.title} » — ouvrez la fiche.`, url: `/#p=${c.ping_id}` }).catch(() => {});
   }
   res.json({ ok: true });
 });

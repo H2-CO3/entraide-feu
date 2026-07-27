@@ -58,7 +58,9 @@
       <p class="lead">Un cookie technique <b>anonyme</b> identifie votre navigateur — jamais votre personne —
       pour que vous puissiez gérer vos SOS et refuges.</p>
       <p class="small muted">En acceptant, vous engagez votre responsabilité sur la sincérité de vos déclarations.
-      Tout expire automatiquement sous 24&nbsp;h. <a href="/legal.html" target="_blank">Mentions légales</a></p>
+      Tout expire automatiquement sous 24&nbsp;h. Si vous changez d'appareil, un <b>code de secours 🔑</b>
+      affiché sur vos publications vous permet d'en garder la main.
+      <a href="/legal.html" target="_blank">Mentions légales</a></p>
       <button class="btn big" id="obAccept">J'accepte</button>
       <p class="ob-dots">○ ○ ○ ●</p>
     </div>
@@ -160,6 +162,7 @@
       <input type="range" id="helpRadius" min="2" max="100" value="20">
     </label>
     <label class="switch"><input type="checkbox" id="helpNotif" checked> 🔔 Recevoir les notifications</label>
+    <p class="small" id="notifStatus"></p>
     <p class="small muted">Votre position ne sert qu'à filtrer les alertes — elle n'est jamais affichée publiquement.
     Elle n'est partagée qu'avec un émetteur précis, au moment où vous cliquez «&nbsp;j'arrive&nbsp;» sur sa fiche.</p>
     <p class="small muted" id="helpIosHint" hidden>📱 Sur iPhone : ajoutez d'abord le site à l'écran d'accueil (Partager → Sur l'écran d'accueil) pour recevoir les notifications.</p>
@@ -178,8 +181,7 @@
 <div id="doneModal" class="overlay hidden">
   <div class="modal">
     <h2 id="doneTitle">✅ Publié !</h2>
-    <p>Code de clôture de secours (notez-le si vous risquez de changer d'appareil)&nbsp;:</p>
-    <p class="code" id="doneCode"></p>
+    <p class="small muted">Visible sur la carte pendant 24&nbsp;h. Retrouvez votre code de secours 🔑 sur votre publication.</p>
     <button class="btn" id="doneNotif">🔔 Me prévenir quand quelqu'un arrive</button>
     <button class="btn ghost" id="doneShare">📤 Partager la fiche</button>
     <button class="linklike" id="doneClose">Fermer</button>
