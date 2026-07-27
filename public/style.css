@@ -76,7 +76,12 @@ a { color: #7ab8ff; }
 }
 .ob-full .ob-step { max-width: 420px; margin: 0 auto; width: 100%; }
 .ob-emoji { font-size: 3.2rem; margin-bottom: .8rem; }
-.ob-dots { color: #4a5266; letter-spacing: .4rem; margin-top: 1.4rem; font-size: .8rem; }
+.ob-dots { display: flex; justify-content: center; gap: .7rem; margin-top: 1.5rem; }
+.ob-dot {
+  width: 15px; height: 15px; border-radius: 50%; border: 0; padding: 0;
+  background: #3a4356; cursor: pointer; transition: transform .15s, background .15s;
+}
+.ob-dot.on { background: #7ab8ff; transform: scale(1.35); }
 .ob-full .chips { justify-content: center; }
 .ob-full .warn { text-align: center; font-size: 1rem; }
 .ob-card h1 { margin-bottom: .6rem; }

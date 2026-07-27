@@ -23,9 +23,11 @@
       <h1>Entraide Feu</h1>
       <p class="lead">La carte d'entraide de la zone incendiée.<br>
       Des SOS, des refuges, des coups de main —<br>en direct. Sans compte, sans inscription.</p>
+      <p class="warn">⏳ Tout ce qui est publié <b>expire au bout de 24&nbsp;h</b> —
+      la carte ne montre que la situation du jour.</p>
       <button class="btn big" id="obNext1">Continuer</button>
       <button class="linklike" id="obRecover">🔑 J'ai déjà un code de session</button>
-      <p class="ob-dots">● ○ ○ ○ ○</p>
+      <p class="ob-dots"></p>
     </div>
     <div class="ob-step hidden" id="ob2">
       <p class="ob-emoji">⚠️</p>
@@ -37,7 +39,7 @@
       plusieurs heures de latence, <b>indicatifs seulement</b> — ne vous y fiez jamais pour votre sécurité.
       Les consignes officielles (préfecture, FR-Alert) priment toujours.</p>
       <button class="btn big" id="obNext2">J'ai compris</button>
-      <p class="ob-dots">○ ● ○ ○ ○</p>
+      <p class="ob-dots"></p>
     </div>
     <div class="ob-step hidden" id="ob3">
       <p class="ob-emoji">👤</p>
@@ -51,7 +53,7 @@
         <button class="chip" data-v="soignant">⚕️ Soignant</button>
       </div>
       <button class="btn big" id="obNext3">Continuer</button>
-      <p class="ob-dots">○ ○ ● ○ ○</p>
+      <p class="ob-dots"></p>
     </div>
     <div class="ob-step hidden" id="ob4">
       <p class="ob-emoji">🍪</p>
@@ -62,7 +64,7 @@
       Tout expire automatiquement sous 24&nbsp;h. À l'écran suivant, un <b>code de session 🔑</b>
       unique vous sera remis. <a href="/legal.html" target="_blank">Mentions légales</a></p>
       <button class="btn big" id="obAccept">J'accepte</button>
-      <p class="ob-dots">○ ○ ○ ● ○</p>
+      <p class="ob-dots"></p>
     </div>
     <div class="ob-step hidden" id="obCode">
       <p class="ob-emoji">🔑</p>
@@ -73,7 +75,7 @@
       <b>Notez-le ou copiez-le maintenant</b> — il ne sera plus jamais affiché.</p>
       <button class="btn" id="obCodeCopy">📋 Copier le code</button>
       <button class="btn big" id="obCodeOk">C'est noté</button>
-      <p class="ob-dots">○ ○ ○ ○ ●</p>
+      <p class="ob-dots"></p>
     </div>
     <div class="ob-step hidden" id="ob5">
       <p class="ob-emoji">🤝</p>
@@ -173,7 +175,7 @@
       <input type="range" id="helpRadius" min="2" max="100" value="20">
     </label>
     <label class="switch"><input type="checkbox" id="helpNotif" checked> 🔔 Recevoir les notifications</label>
-    <p class="small" id="notifStatus"></p>
+    <p class="small" id="notifStatus" style="white-space:pre-line"></p>
     <p class="small muted">Votre position ne sert qu'à filtrer les alertes — elle n'est jamais affichée publiquement.
     Elle n'est partagée qu'avec un émetteur précis, au moment où vous cliquez «&nbsp;j'arrive&nbsp;» sur sa fiche.</p>
     <p class="small muted" id="helpIosHint" hidden>📱 Sur iPhone : ajoutez d'abord le site à l'écran d'accueil (Partager → Sur l'écran d'accueil) pour recevoir les notifications.</p>

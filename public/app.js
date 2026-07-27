@@ -656,17 +656,27 @@ function isIosNoPush() {
   const ios = /iP(hone|ad|od)/.test(navigator.userAgent);
   return ios && !window.navigator.standalone && !('PushManager' in window);
 }
+// Dernière cause d'échec push, exposée dans le diagnostic — plus d'échec muet
+let lastPushError = null;
 async function subscribePush() {
-  if (!pushSupported()) return null;
+  lastPushError = null;
+  if (!pushSupported()) { lastPushError = 'non supporté ou déjà bloqué'; return null; }
   const perm = await Notification.requestPermission();
-  if (perm !== 'granted') return null;
-  const reg = await navigator.serviceWorker.ready;
-  const key = state?.vapidKey; if (!key) return null;
+  if (perm !== 'granted') { lastPushError = 'permission → ' + perm; return null; }
+  let reg;
+  try {
+    reg = await Promise.race([
+      navigator.serviceWorker.ready,
+      new Promise((_, rj) => setTimeout(() => rj(new Error('service worker inactif après 6 s')), 6000)),
+    ]);
+  } catch (e) { lastPushError = 'service worker : ' + e.message; return null; }
+  const key = state?.vapidKey;
+  if (!key) { lastPushError = 'clé VAPID absente (état pas encore chargé ?)'; return null; }
   const raw = atob(key.replace(/-/g, '+').replace(/_/g, '/'));
   const arr = new Uint8Array([...raw].map(c => c.charCodeAt(0)));
   try {
     return await reg.pushManager.subscribe({ userVisibleOnly: true, applicationServerKey: arr });
-  } catch { return null; }
+  } catch (e) { lastPushError = 'abonnement : ' + e.name + ' — ' + e.message; return null; }
 }
 async function askNotifPermission() {
   // pour l'émetteur / demandeur : un abonnement minimal suffit à recevoir ses notifications ciblées
@@ -685,20 +695,24 @@ function currentWatchPrefs() {
 // Diagnostic notifications : dire POURQUOI ça ne marche pas et comment débloquer
 // (un refus de permission ne peut jamais être contourné par le site — choix des navigateurs)
 function notifDiagnostic() {
+  const extra = [];
+  if (navigator.brave) extra.push('🦁 Brave détecté : le push exige « Utiliser les services Google pour la messagerie push » dans brave://settings/privacy (puis redémarrer Brave).');
+  if (lastPushError) extra.push('⚙️ Dernier échec : ' + lastPushError);
+  const tail = extra.length ? '\n' + extra.join('\n') : '';
   if (!window.isSecureContext)
-    return '🔒 Connexion non sécurisée : notifications impossibles. Utilisez l\'adresse HTTPS du site.';
+    return '🔒 Connexion non sécurisée : notifications impossibles. Utilisez l\'adresse HTTPS du site.' + tail;
   if (isIosNoPush())
-    return '📱 iPhone : ajoutez d\'abord le site à l\'écran d\'accueil (Partager → Sur l\'écran d\'accueil), puis revenez activer.';
+    return '📱 iPhone : ajoutez d\'abord le site à l\'écran d\'accueil (Partager → Sur l\'écran d\'accueil), puis revenez activer.' + tail;
   if (!('serviceWorker' in navigator) || !('PushManager' in window) || typeof Notification === 'undefined')
-    return '❌ Ce navigateur ne prend pas en charge les notifications. Astuce : onglet ouvert, les alertes s\'affichent quand même dans la page.';
+    return '❌ Ce navigateur ne prend pas en charge les notifications. Astuce : onglet ouvert, les alertes s\'affichent quand même dans la page.' + tail;
   switch (Notification.permission) {
     case 'granted':
-      return state?.me?.watch?.subscribed ? '✅ Notifications actives sur cet appareil.'
-        : '🟡 Autorisées — cliquez Enregistrer pour les activer.';
+      return (state?.me?.watch?.subscribed ? '✅ Notifications actives sur cet appareil.'
+        : '🟡 Autorisées — cliquez Enregistrer pour les activer.') + tail;
     case 'denied':
-      return '🚫 Bloquées pour ce site. Pour débloquer : cadenas (ou ⋮) dans la barre d\'adresse → Autorisations → Notifications → Autoriser, puis revenez et ré-enregistrez. En attendant, onglet ouvert = alertes dans la page.';
+      return '🚫 Bloquées pour ce site. Pour débloquer : cadenas (ou ⋮) dans la barre d\'adresse → Autorisations → Notifications → Autoriser, puis revenez et ré-enregistrez. En attendant, onglet ouvert = alertes dans la page.' + tail;
     default:
-      return '🔔 Le navigateur demandera votre accord au moment d\'enregistrer.';
+      return '🔔 Le navigateur demandera votre accord au moment d\'enregistrer.' + tail;
   }
 }
 
@@ -733,17 +747,20 @@ function setupHelp() {
     const cats = chipsValues($('#helpCats'));
     if (!cats.length) return toast('Cochez au moins une catégorie à surveiller', true);
     const wantNotif = $('#helpNotif').checked;
+    // ORDRE CRITIQUE : la permission de notification DOIT être demandée en
+    // premier, dans la foulée du clic — l'« activation utilisateur » expire en
+    // ~5 s, et la géoloc (prompt + GPS) consommait ce délai → refus automatique
+    let sub = null;
+    if (wantNotif) {
+      sub = await subscribePush();
+      if (!sub && isIosNoPush()) toast('iPhone : ajoutez le site à l’écran d’accueil pour les notifications', true);
+      else if (!sub) toast('Notifications impossibles — détail affiché sous la case', true);
+    }
     // la position ne sert qu'à filtrer les alertes dans le rayon choisi
     let pos = { lat: state?.me?.watch?.lat, lng: state?.me?.watch?.lng };
     const got = await getPosition();
     if (got) pos = got;
     else if (pos.lat == null) { const c = map.getCenter(); pos = { lat: c.lat, lng: c.lng }; toast('Position GPS indisponible — centre de la carte utilisé'); }
-    let sub = null;
-    if (wantNotif) {
-      sub = await subscribePush();
-      if (!sub && isIosNoPush()) toast('iPhone : ajoutez le site à l’écran d’accueil pour les notifications', true);
-      else if (!sub) toast('Notifications refusées par le navigateur', true);
-    }
     try {
       await api('/api/watch', {
         json: { cats, lat: pos.lat, lng: pos.lng, radiusKm: +$('#helpRadius').value, subscription: sub || undefined },
@@ -817,6 +834,7 @@ function setupProfile() {
   $('#pfInfo').onclick = () => { $('#profileModal').classList.add('hidden'); $('#infoModal').classList.remove('hidden'); };
   $('#pfReplay').onclick = () => {
     $('#profileModal').classList.add('hidden');
+    obAccepted = true; // déjà onboardé : navigation libre, pas de ré-émission de code
     obGoto(1);
     $('#obName').value = state?.me?.name || '';
     $('#onboarding').classList.remove('hidden');
@@ -824,13 +842,48 @@ function setupProfile() {
 }
 
 /* ---------- onboarding ---------- */
+let obStep = 1, obAccepted = false;
 function obGoto(n) {
+  obStep = n;
   for (let i = 1; i <= 5; i++) $('#ob' + i).classList.toggle('hidden', i !== n);
   $('#obCode').classList.add('hidden');
+  renderObDots();
+}
+// points de navigation : cliquables, agrandis, l'étape courante en surbrillance
+function renderObDots() {
+  document.querySelectorAll('#onboarding .ob-dots').forEach(el => {
+    el.innerHTML = '';
+    for (let i = 1; i <= 5; i++) {
+      const b = document.createElement('button');
+      b.className = 'ob-dot' + (i === obStep ? ' on' : '');
+      b.setAttribute('aria-label', 'Étape ' + i);
+      b.onclick = () => obNav(i);
+      el.appendChild(b);
+    }
+  });
+}
+function obNav(i) {
+  if (i === obStep) return;
+  if (i > 3 && !obAccepted && !$('#obName').value.trim()) { obGoto(3); toast('Votre prénom est nécessaire 🙏', true); return; }
+  if (i === 5 && !obAccepted) { obGoto(4); toast('Acceptez d’abord pour continuer', true); return; }
+  obGoto(i);
 }
 function setupOnboarding() {
   if (!localStorage.getItem('onboarded')) $('#onboarding').classList.remove('hidden');
   chipsToggle($('#obProf'), false);
+  renderObDots();
+  // navigation au doigt entre les écrans (l'écran du code reste hors circuit)
+  let swipeX = null, swipeY = null;
+  const ob = $('#onboarding');
+  ob.addEventListener('touchstart', e => { swipeX = e.touches[0].clientX; swipeY = e.touches[0].clientY; }, { passive: true });
+  ob.addEventListener('touchend', e => {
+    if (swipeX == null) return;
+    const dx = e.changedTouches[0].clientX - swipeX, dy = e.changedTouches[0].clientY - swipeY;
+    swipeX = null;
+    if (Math.abs(dx) < 60 || Math.abs(dy) > Math.abs(dx)) return;
+    if (!$('#obCode').classList.contains('hidden')) return;
+    obNav(dx < 0 ? Math.min(obStep + 1, 5) : Math.max(obStep - 1, 1));
+  }, { passive: true });
   $('#obNext1').onclick = () => obGoto(2);
   $('#obNext2').onclick = () => obGoto(3);
   $('#obNext3').onclick = () => {
@@ -838,6 +891,8 @@ function setupOnboarding() {
     obGoto(4);
   };
   $('#obAccept').onclick = async () => {
+    if (obAccepted) return obGoto(5); // déjà accepté (navigation retour) : ne pas ré-émettre de code
+    obAccepted = true;
     await api('/api/onboard', { json: { name: $('#obName').value.trim(), profession: chipsValues($('#obProf'))[0] || null } }).catch(() => {});
     localStorage.setItem('onboarded', '1');
     // remise du code de session — affiché UNE seule fois
