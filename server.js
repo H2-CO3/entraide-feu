@@ -214,7 +214,7 @@ function parseFirmsCsv(text) {
     out.push({
       lat, lng,
       t: `${c[idx.acq_date]}T${hhmm.slice(0, 2)}:${hhmm.slice(2)}:00Z`,
-      sat: { N: 'Suomi-NPP', 1: 'NOAA-20', 2: 'NOAA-21' }[c[idx.satellite]] || c[idx.satellite],
+      sat: { N: 'Suomi-NPP', N20: 'NOAA-20', N21: 'NOAA-21', 1: 'NOAA-20', 2: 'NOAA-21' }[c[idx.satellite]] || c[idx.satellite],
       conf: c[idx.confidence], // l / n / h
       frp: parseFloat(c[idx.frp]) || null,
     });
