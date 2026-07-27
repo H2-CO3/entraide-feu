@@ -176,6 +176,7 @@ input[type=text], input[type=tel], textarea {
   font-family: inherit; cursor: pointer; text-align: left;
 }
 .prow:active { background: #2a3040; }
+.prow-danger { border-color: #6e2929; color: #ff9b9b; }
 .prow .chev { color: #5a6478; font-size: 1.2rem; }
 .sep { height: 1px; background: #2c3344; margin: 1.1rem 0; }
 

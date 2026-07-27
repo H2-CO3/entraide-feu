@@ -778,6 +778,25 @@ function setupProfile() {
       poll();
     } catch (e) { toast(e.message, true); }
   };
+  $('#pfLogout').onclick = async () => {
+    const sure = confirm(
+      'Se déconnecter de cet appareil ?\n\n' +
+      'Cette session ne sera récupérable QU\'AVEC votre code de session (FEU-XXXX-XXXX). ' +
+      'Sans code noté, elle est définitivement perdue (vos publications expireront seules sous 24 h).\n\n' +
+      'Pas de code sous la main ? Annulez et utilisez « Régénérer mon code » d\'abord.');
+    if (!sure) return;
+    try {
+      // désabonner le push local : le prochain utilisateur de l'appareil ne doit
+      // pas recevoir les alertes de cette session
+      const reg = await navigator.serviceWorker?.ready;
+      const sub = await reg?.pushManager?.getSubscription();
+      await sub?.unsubscribe();
+    } catch {}
+    await api('/api/session/logout', { json: {} }).catch(() => {});
+    localStorage.clear();
+    sessionStorage.clear();
+    location.reload(); // identité neuve + onboarding
+  };
   $('#pfNewCode').onclick = async () => {
     if (!confirm('Régénérer votre code de session ? L\'ancien code ne fonctionnera plus. Le nouveau ne sera affiché qu\'une seule fois.')) return;
     try {

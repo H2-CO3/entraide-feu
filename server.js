@@ -313,6 +313,14 @@ app.post('/api/session/code', limited('code-gen', 10), async (req, res) => {
   res.json({ code });
 });
 
+// Se déconnecter de cet appareil : le cookie est effacé, la session ne reste
+// récupérable QUE par le code (rien d'autre n'est supprimé côté serveur)
+app.post('/api/session/logout', (req, res) => {
+  const secure = req.secure || req.headers['x-forwarded-proto'] === 'https' ? '; Secure' : '';
+  res.setHeader('Set-Cookie', `fid=; Max-Age=0; Path=/; HttpOnly; SameSite=Lax${secure}`);
+  res.json({ ok: true });
+});
+
 // Récupérer sa session sur un nouvel appareil avec le code
 app.post('/api/session/recover', limited('recover', 10), async (req, res) => {
   const code = normCode(req.body.code);
