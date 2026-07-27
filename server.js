@@ -377,6 +377,18 @@ app.post('/api/onboard', limited('onboard', 30), async (req, res) => {
     email = e || null; // champ vidé = e-mail supprimé
   }
   await q('INSERT INTO identities (hash, name, profession, email) VALUES (?,?,?,?) ON DUPLICATE KEY UPDATE name=VALUES(name), profession=VALUES(profession), email=VALUES(email)', [req.hash, name, prof, email]);
+  // e-mail de bienvenue à l'enregistrement d'une (nouvelle) adresse : l'utilisateur
+  // vérifie tout de suite la réception — et sort le domaine des spams AVANT la
+  // première vraie alerte urgente
+  if (email && email !== cur.email) {
+    sendMail(email, '✅ Vos alertes Entraide Feu sont actives',
+      `Bonjour${name ? ' ' + name : ''},\n\n` +
+      'Cette adresse recevra désormais les alertes qui vous concernent : SOS correspondant à vos critères, ' +
+      'réponses à vos publications, demandes de refuge et échanges de numéro.\n\n' +
+      '📌 Si ce message est arrivé dans vos SPAMS, marquez-le comme légitime dès maintenant — ' +
+      'les prochaines alertes seront urgentes et devront arriver dans votre boîte principale.'
+    ).catch(e => logErr('welcome-mail', e));
+  }
   res.json({ ok: true });
 });
 
