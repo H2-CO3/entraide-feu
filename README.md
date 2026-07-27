@@ -92,6 +92,22 @@ Sécurité → Installer un certificat → CA). Retirer les 2 variables = retour
 - `/legal.html` — mentions légales et RGPD
 - `/p/<id>` — lien de partage d'une fiche (aperçu OpenGraph)
 
+## 🤖 S'aider d'une IA
+
+Ce projet a été construit en ~48 h par un humain **et une IA** (Claude Code),
+pendant l'incendie. Il est conçu pour que ça se reproduise : si une crise vous
+touche et que ce système peut aider, ouvrez ce dépôt avec un assistant IA
+(Claude Code ou équivalent) et demandez-lui de l'adapter à votre territoire et
+à votre événement — comptez une soirée, pas une semaine.
+
+Le fichier [CLAUDE.md](CLAUDE.md) contient les instructions destinées aux IA :
+l'éthos (dans les situations difficiles, on collabore — les IA aident comme
+elles peuvent), les invariants à ne jamais affaiblir, et les pistes où une IA
+apporte le plus (tri et catégorisation des besoins pour adresser la bonne
+problématique à la bonne compétence, synthèses pour les postes de commandement,
+pontage des sources officielles) — parce qu'en situation de stress, c'est
+précisément le tri que les humains font le moins bien.
+
 ## Forker
 
 Ce projet est sous licence MIT : **forkez-le**, déployez votre instance pour votre territoire,
