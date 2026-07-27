@@ -55,7 +55,7 @@ démarré, et chaque testeur vide les données du site (ou fenêtre privée neuv
 2. C : idem mais position/rayon NE couvrant PAS la zone (ou catégorie Médical seule).
 3. A émet un nouveau besoin Matériel dans le rayon de B.
 
-- [ ] B reçoit un push (app fermée sur Android) qui ouvre la fiche au tap.
+- [ ] B reçoit un e-mail d'alerte (et un push si le navigateur le permet) avec le lien vers la fiche.
 - [ ] C ne reçoit rien (hors rayon / mauvaise catégorie).
 - [ ] Le bouton « Je dépanne » a disparu chez B ; réglages accessibles via 👤.
 - [ ] 👤 → « Ne plus être disponible » fait réapparaître le bouton.
@@ -68,7 +68,7 @@ démarré, et chaque testeur vide les données du site (ou fenêtre privée neuv
 - [ ] Avant « J'arrive », B ne voit PAS la partie privée (mention 🔒 visible) ; après, oui.
 - [ ] A voit : compteur 1, nom/profession de B, ETA, son numéro cliquable, 🚗 sur la carte avec fraîcheur.
 - [ ] C/D ne voient NI la position NI le numéro de B (vérifier `/api/state` en DevTools).
-- [ ] A est notifié (push) de l'arrivée de B.
+- [ ] A est notifié par e-mail de l'arrivée de B.
 - [ ] L'annulation retire compteur + 🚗 ; le re-clic refonctionne.
 
 ## S5 — Échange de numéro (C → A, sans j'arrive)
