@@ -212,6 +212,18 @@ input[type=text], input[type=tel], textarea {
 .toast.err { background: #d64541; }
 @keyframes fadein { from { opacity: 0; transform: translateY(-8px); } }
 
+/* ---- partage ---- */
+.share-grid { display: grid; grid-template-columns: 1fr 1fr; gap: .55rem; margin: .6rem 0; }
+.share-btn {
+  display: flex; align-items: center; justify-content: center; gap: .4rem;
+  background: #2a3040; border: 1px solid #3a4152; color: #eef0f4; text-decoration: none;
+  border-radius: 12px; padding: .8rem .5rem; font-size: .95rem; font-weight: 600; cursor: pointer;
+  font-family: inherit;
+}
+.share-btn:active { background: #333b4e; }
+.nav-row { margin: .45rem 0; }
+.nav-row a { font-weight: 700; }
+
 /* ---- légende ---- */
 .legend { list-style: none; margin: .4rem 0 .8rem; }
 .legend li { margin: .45rem 0; font-size: .92rem; display: flex; align-items: center; gap: .5rem; flex-wrap: wrap; }

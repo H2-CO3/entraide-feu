@@ -698,6 +698,9 @@ app.get('/p/:id', async (req, res) => {
 <meta property="og:description" content="${esc(desc.slice(0, 200))}">
 <meta property="og:image" content="${esc(img)}">
 <meta property="og:type" content="website">
+<meta name="twitter:card" content="summary_large_image">
+<meta name="twitter:title" content="${esc(title)}">
+<meta name="twitter:image" content="${esc(img)}">
 <meta name="viewport" content="width=device-width,initial-scale=1">
 <script>location.replace('/#p=${esc(req.params.id)}')</script>
 </head><body><a href="/#p=${esc(req.params.id)}">Ouvrir la carte</a></body></html>`);

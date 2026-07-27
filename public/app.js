@@ -210,7 +210,8 @@ function render() {
     }).addTo(map).bindPopup(
       `<b>🏛️ ${esc(o.label)}</b><br>${o.detail ? esc(o.detail) + '<br>' : ''}` +
       `${o.source ? `<span style="opacity:.7;font-size:.8em">Source : ${esc(o.source)}</span><br>` : ''}` +
-      `<a href="https://www.google.com/maps/dir/?api=1&destination=${o.lat},${o.lng}" target="_blank" rel="noopener">🧭 Itinéraire</a>`));
+      `🧭 <a href="https://www.google.com/maps/dir/?api=1&destination=${o.lat},${o.lng}" target="_blank" rel="noopener">Google Maps</a> · ` +
+      `<a href="https://waze.com/ul?ll=${o.lat},${o.lng}&navigate=yes" target="_blank" rel="noopener">Waze</a>`));
 
   // zones de danger
   zoneLayers.forEach(l => l.remove());
@@ -353,8 +354,10 @@ function renderSheet(id, soft) {
     ${p.ownerName ? `<span class="badge">par ${esc(p.ownerName)}</span>` : ''}
     ${p.ownerProf ? `<span class="badge prof">${PROF_LABEL[p.ownerProf]}</span>` : ''}
     ${zone ? `<span class="badge zone">⚠️ zone «&nbsp;${esc(zone.label)}&nbsp;» — ne vous y rendez pas</span>` : ''}</div>
-    <p style="margin:.45rem 0"><a class="btn ghost small-btn" style="text-decoration:none"
-      href="https://www.google.com/maps/dir/?api=1&destination=${p.lat},${p.lng}" target="_blank" rel="noopener">🧭 Itinéraire (Google Maps — feux et routes coupées visibles)</a></p>`;
+    <p class="nav-row">🧭 Itinéraire :
+      <a href="https://www.google.com/maps/dir/?api=1&destination=${p.lat},${p.lng}" target="_blank" rel="noopener">Google Maps</a> ·
+      <a href="https://waze.com/ul?ll=${p.lat},${p.lng}&navigate=yes" target="_blank" rel="noopener">Waze</a>
+      <span class="muted small">(routes coupées signalées en direct)</span></p>`;
   if (p.message) html += `<p style="margin:.5rem 0">${esc(p.message)}</p>`;
   if (p.privateMessage) {
     html += `<div class="warn" style="border-color:#3a5a7a;background:#20303a">🔒 <b>Détails réservés :</b><br>${esc(p.privateMessage)}</div>`;
@@ -498,12 +501,30 @@ async function copyText(text) {
   return false;
 }
 
-async function sharePing(p) {
-  const url = `${location.origin}/p/${p.id}`;
-  if (navigator.share) { navigator.share({ title: p.title, url }).catch(() => {}); return; }
-  if (await copyText(url)) toast('Lien copié 📋');
-  else prompt('Copie bloquée par le navigateur — copiez le lien manuellement :', url);
+/* Feuille de partage hybride : partage natif (toutes les apps du téléphone)
+   + boutons ciblés par réseau (indispensables sur desktop, suggestifs partout).
+   Instagram/TikTok exclus : pas de lien de partage web chez eux. */
+function openShare(kind, title, url) {
+  const label = kind === 'app'
+    ? '🔥 Entraide Feu — SOS, refuges et collectes en zone d\'incendie, en direct'
+    : (kind === 'besoin' ? `🆘 SOS — « ${title} »` : `🛟 ${title}`);
+  const text = `${label} · ${url}`;
+  $('#shareWhat').textContent = label;
+  $('#shareNative').style.display = navigator.share ? '' : 'none';
+  $('#shareNative').onclick = () => navigator.share({ title: kind === 'app' ? 'Entraide Feu' : title, text: label, url }).catch(() => {});
+  $('#shWa').href = 'https://wa.me/?text=' + encodeURIComponent(text);
+  $('#shFb').href = 'https://www.facebook.com/sharer/sharer.php?u=' + encodeURIComponent(url);
+  $('#shTg').href = 'https://t.me/share/url?url=' + encodeURIComponent(url) + '&text=' + encodeURIComponent(label);
+  $('#shX').href = 'https://twitter.com/intent/tweet?text=' + encodeURIComponent(label) + '&url=' + encodeURIComponent(url);
+  $('#shSms').href = 'sms:?&body=' + encodeURIComponent(text);
+  $('#shMail').href = 'mailto:?subject=' + encodeURIComponent(kind === 'app' ? 'Entraide Feu' : label) + '&body=' + encodeURIComponent(text);
+  $('#shCopy').onclick = async () => {
+    if (await copyText(text)) toast('Message copié 📋');
+    else prompt('Copie bloquée — copiez manuellement :', text);
+  };
+  $('#shareModal').classList.remove('hidden');
 }
+function sharePing(p) { openShare(p.kind || 'besoin', p.title, `${location.origin}/p/${p.id}`); }
 
 /* ---------- émission ---------- */
 function openEmit(kind, prefill) {
@@ -644,7 +665,7 @@ async function submitPing() {
     stopPlacing();
     $('#doneTitle').textContent = d.kind === 'besoin' ? '✅ SOS publié' : '✅ Refuge publié';
     $('#doneModal').classList.remove('hidden');
-    $('#doneShare').onclick = () => sharePing({ id: r.id, title: d.title });
+    $('#doneShare').onclick = () => sharePing({ id: r.id, title: d.title, kind: d.kind });
     poll();
   } catch (e) { toast(e.message, true); }
   $('#placeOk').disabled = false;
@@ -793,6 +814,8 @@ function setupProfile() {
     } catch (e) { toast(e.message, true); }
   };
   $('#pfHelp').onclick = () => { $('#profileModal').classList.add('hidden'); $('#btnHelp').click(); };
+  $('#pfShareApp').onclick = () => { $('#profileModal').classList.add('hidden'); openShare('app', null, location.origin); };
+  $('#shareClose').onclick = () => $('#shareModal').classList.add('hidden');
   $('#pfRecover').onclick = async () => {
     const code = prompt('Code de session (FEU-XXXX-XXXX) — la session actuelle de cet appareil sera remplacée :');
     if (!code) return;
