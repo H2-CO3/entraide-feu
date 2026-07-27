@@ -292,8 +292,14 @@ function exitDemo() {
   $('#demoBar').classList.add('hidden');
   $('#mainBtns').classList.remove('hidden');
   closeSheet();
-  poll(); // retour aux vraies données
-  toast('Bienvenue — la carte est maintenant la vraie 🙌');
+  poll(); // les vraies données reviennent en arrière-plan
+  if (!localStorage.getItem('onboarded')) {
+    // « Participer » reprend l'inscription là où elle continue : l'identité
+    $('#onboarding').classList.remove('hidden');
+    obGoto(4);
+  } else {
+    toast('Bienvenue — la carte est maintenant la vraie 🙌');
+  }
 }
 
 async function poll() {
@@ -988,11 +994,18 @@ function setupProfile() {
 
 /* ---------- onboarding ---------- */
 let obStep = 1, obAccepted = false;
+// écrans hors pagination (code, final)
+function showObStep(id) {
+  for (let i = 1; i <= 5; i++) $('#ob' + i).classList.add('hidden');
+  $('#obCode').classList.add('hidden');
+  $('#obFinal').classList.add('hidden');
+  $('#' + id).classList.remove('hidden');
+}
 function obGoto(n) {
   obStep = n;
   for (let i = 1; i <= 5; i++) $('#ob' + i).classList.toggle('hidden', i !== n);
   $('#obCode').classList.add('hidden');
-  $('#obAlert').classList.add('hidden');
+  $('#obFinal').classList.add('hidden');
   renderObDots();
 }
 // points de navigation : cliquables, agrandis, l'étape courante en surbrillance
@@ -1010,8 +1023,8 @@ function renderObDots() {
 }
 function obNav(i) {
   if (i === obStep) return;
-  if (i > 3 && !obAccepted && !$('#obName').value.trim()) { obGoto(3); toast('Votre prénom est nécessaire 🙏', true); return; }
-  if (i === 5 && !obAccepted) { obGoto(4); toast('Acceptez d’abord pour continuer', true); return; }
+  // l'écran 5 (engagement) exige le prénom de l'écran 4
+  if (i > 4 && !obAccepted && !$('#obName').value.trim()) { obGoto(4); toast('Votre prénom est nécessaire 🙏', true); return; }
   obGoto(i);
 }
 function setupOnboarding() {
@@ -1032,43 +1045,38 @@ function setupOnboarding() {
   }, { passive: true });
   $('#obNext1').onclick = () => obGoto(2);
   $('#obNext2').onclick = () => obGoto(3);
-  $('#obNext3').onclick = () => {
+  $('#obDemoGo').onclick = () => { $('#onboarding').classList.add('hidden'); enterDemo(); };
+  $('#obDemoSkip').onclick = () => obGoto(4);
+  $('#obNext4').onclick = () => {
     if (!$('#obName').value.trim()) { toast('Votre prénom est nécessaire 🙏', true); $('#obName').focus(); return; }
-    obGoto(4);
+    const email = $('#obEmail').value.trim();
+    if (email && !/^[^\s@]+@[^\s@]+\.[^\s@]{2,}$/.test(email)) { toast('E-mail invalide (ou laissez vide)', true); $('#obEmail').focus(); return; }
+    obGoto(5);
   };
   $('#obAccept').onclick = async () => {
-    if (obAccepted) return obGoto(5); // déjà accepté (navigation retour) : ne pas ré-émettre de code
+    if (obAccepted) return showObStep('obFinal'); // navigation retour : pas de ré-émission de code
     obAccepted = true;
-    await api('/api/onboard', { json: { name: $('#obName').value.trim(), profession: chipsValues($('#obProf'))[0] || null } }).catch(() => {});
+    await api('/api/onboard', {
+      json: {
+        name: $('#obName').value.trim(),
+        profession: chipsValues($('#obProf'))[0] || null,
+        email: $('#obEmail').value.trim(), // vide = pas d'alertes e-mail (modifiable plus tard)
+      },
+    }).catch(() => {});
     localStorage.setItem('onboarded', '1');
     // remise du code de session — affiché UNE seule fois
     try {
       const r = await api('/api/session/code', { json: {} });
       $('#obCodeValue').textContent = r.code;
-      for (let i = 1; i <= 5; i++) $('#ob' + i).classList.add('hidden');
-      $('#obCode').classList.remove('hidden');
-    } catch { obGoto(5); } // si l'émission échoue, on n'empêche pas d'entrer
+      showObStep('obCode');
+    } catch { showObStep('obFinal'); } // si l'émission échoue, on n'empêche pas d'entrer
     poll(); // rafraîchit state.me avec la nouvelle identité
   };
   $('#obCodeCopy').onclick = async () => {
     if (await copyText($('#obCodeValue').textContent)) toast('Code copié 📋');
     else toast('Copie bloquée — notez-le à la main', true);
   };
-  $('#obCodeOk').onclick = () => {
-    for (let i = 1; i <= 5; i++) $('#ob' + i).classList.add('hidden');
-    $('#obCode').classList.add('hidden');
-    $('#obAlert').classList.remove('hidden'); // proposition d'alertes e-mail
-  };
-  $('#obAlertGo').onclick = async () => {
-    const email = $('#obEmail').value.trim();
-    if (!email) return toast('Renseignez votre e-mail (ou « Plus tard »)', true);
-    try { await api('/api/onboard', { json: { email } }); } catch (e) { return toast(e.message, true); }
-    $('#obAlert').classList.add('hidden');
-    $('#onboarding').classList.add('hidden');
-    poll();
-    $('#btnHelp').click(); // enchaîne sur la configuration des alertes (catégories, rayon)
-  };
-  $('#obAlertLater').onclick = () => { $('#obAlert').classList.add('hidden'); obGoto(5); };
+  $('#obCodeOk').onclick = () => showObStep('obFinal');
   $('#obRecover').onclick = async () => {
     const code = prompt('Entrez votre code de session (FEU-XXXX-XXXX) :');
     if (!code) return;
@@ -1083,7 +1091,6 @@ function setupOnboarding() {
   $('#obNeed').onclick = () => { $('#onboarding').classList.add('hidden'); openEmit('besoin'); };
   $('#obHelp').onclick = () => { $('#onboarding').classList.add('hidden'); $('#btnHelp').click(); };
   $('#obRefuge').onclick = () => { $('#onboarding').classList.add('hidden'); openEmit('offre'); };
-  $('#obDemo').onclick = enterDemo;
   $('#demoJoin').onclick = exitDemo;
   $('#obSkip').onclick = () => $('#onboarding').classList.add('hidden');
 }

@@ -42,28 +42,40 @@
       <p class="ob-dots"></p>
     </div>
     <div class="ob-step hidden" id="ob3">
+      <p class="ob-emoji">🎭</p>
+      <h1>Voyez d'abord un exemple</h1>
+      <p class="lead">Explorez librement une carte remplie d'<b>exemples fictifs</b> —
+      SOS, refuges, dépanneurs — pour voir concrètement à quoi sert l'outil.</p>
+      <button class="btn big" id="obDemoGo">🎭 Explorer la démonstration</button>
+      <button class="linklike" id="obDemoSkip">Passer, je connais déjà</button>
+      <p class="ob-dots"></p>
+    </div>
+    <div class="ob-step hidden" id="ob4">
       <p class="ob-emoji">👤</p>
-      <h1>Votre prénom</h1>
-      <p class="lead">Il s'affiche sur vos SOS et rassure ceux qui vous répondent.</p>
+      <h1>Qui êtes-vous&nbsp;?</h1>
       <input id="obName" type="text" maxlength="40" placeholder="Prénom ou pseudo *" autocomplete="given-name">
-      <p class="muted small">Professionnel&nbsp;? Déclarez-le <b>sur l'honneur</b> (badge «&nbsp;se déclare…&nbsp;») — facultatif :</p>
+      <input id="obEmail" type="email" placeholder="E-mail pour les alertes (recommandé)" autocomplete="email">
+      <p class="small muted">Le prénom s'affiche sur vos publications. L'e-mail — jamais public — sert
+      uniquement à vous prévenir : SOS près de chez vous, réponses à vos publications.</p>
       <div class="chips" id="obProf">
         <button class="chip" data-v="pompier">🚒 Pompier</button>
         <button class="chip" data-v="policier">👮 Policier</button>
         <button class="chip" data-v="soignant">⚕️ Soignant</button>
       </div>
-      <button class="btn big" id="obNext3">Continuer</button>
+      <p class="muted small">Professionnel&nbsp;? Déclaration <b>sur l'honneur</b> (badge «&nbsp;se déclare…&nbsp;») — facultatif.</p>
+      <button class="btn big" id="obNext4">Continuer</button>
       <p class="ob-dots"></p>
     </div>
-    <div class="ob-step hidden" id="ob4">
-      <p class="ob-emoji">🍪</p>
-      <h1>Un cookie, c'est tout</h1>
-      <p class="lead">Un cookie technique <b>anonyme</b> identifie votre navigateur — jamais votre personne —
-      pour que vous puissiez gérer vos SOS et refuges.</p>
-      <p class="small muted">En acceptant, vous engagez votre responsabilité sur la sincérité de vos déclarations.
-      Tout expire automatiquement sous 24&nbsp;h. À l'écran suivant, un <b>code de session 🔑</b>
-      unique vous sera remis. <a href="/legal.html" target="_blank">Mentions légales</a></p>
-      <button class="btn big" id="obAccept">J'accepte</button>
+    <div class="ob-step hidden" id="ob5">
+      <p class="ob-emoji">🤝</p>
+      <h1>Votre engagement</h1>
+      <p class="lead">En continuant, vous engagez votre <b>responsabilité</b> sur la sincérité
+      de ce que vous publiez et déclarez.</p>
+      <p class="small muted">Un cookie technique anonyme (strictement nécessaire, exempté de consentement)
+      identifie ce navigateur pour vous laisser gérer vos publications.
+      À l'écran suivant, votre <b>code de session 🔑</b> vous sera remis.
+      <a href="/legal.html" target="_blank">Mentions légales</a></p>
+      <button class="btn big" id="obAccept">Je m'engage et je continue</button>
       <p class="ob-dots"></p>
     </div>
     <div class="ob-step hidden" id="obCode">
@@ -75,26 +87,13 @@
       <b>Notez-le ou copiez-le maintenant</b> — il ne sera plus jamais affiché.</p>
       <button class="btn" id="obCodeCopy">📋 Copier le code</button>
       <button class="btn big" id="obCodeOk">C'est noté</button>
-      <p class="ob-dots"></p>
     </div>
-    <div class="ob-step hidden" id="obAlert">
-      <p class="ob-emoji">🔔</p>
-      <h1>Être alerté&nbsp;?</h1>
-      <p class="lead small">Recevez un <b>e-mail</b> quand un SOS proche correspond à ce que vous
-      pouvez faire, et quand quelqu'un répond à vos publications.</p>
-      <input id="obEmail" type="email" placeholder="votre@email.fr" autocomplete="email">
-      <p class="small muted">Jamais affiché publiquement, jamais transmis — il ne sert qu'à vous prévenir.</p>
-      <button class="btn big" id="obAlertGo">🔔 Activer et configurer mes alertes</button>
-      <button class="linklike" id="obAlertLater">Plus tard</button>
-      <p class="ob-dots"></p>
-    </div>
-    <div class="ob-step hidden" id="ob5">
+    <div class="ob-step hidden" id="obFinal">
       <p class="ob-emoji">🤝</p>
       <h1>On commence&nbsp;?</h1>
       <button class="btn big need" id="obNeed">🆘 Lancer un SOS</button>
       <button class="btn big help" id="obHelp">💪 Je dépanne <span class="small">(alertes)</span></button>
       <button class="btn big" id="obRefuge">🏠 Ouvrir un refuge</button>
-      <button class="btn big ghost" id="obDemo">🎭 Voir un exemple d'utilisation</button>
       <button class="linklike" id="obSkip">Juste voir la carte</button>
     </div>
   </div>
