@@ -7,6 +7,7 @@ const multer = require('multer');
 const webpush = require('web-push');
 const QRCode = require('qrcode');
 const { PNG } = require('pngjs');
+const nodemailer = require('nodemailer');
 const { q, init } = require('./db');
 const { runImport } = require('./importer');
 
@@ -124,6 +125,35 @@ const esc = s => String(s ?? '').replace(/[&<>"']/g, c => ({ '&': '&amp;', '<': 
 // cibler une demande de numéro sans jamais voir le hash d'identité du dépanneur
 const aidOf = (pingId, helperHash) => crypto.createHmac('sha256', SECRET).update(`aid|${pingId}|${helperHash}`).digest('hex').slice(0, 12);
 
+// ---------- notifications : e-mail (canal principal) + push (bonus) ----------
+// Le Web Push est capricieux (Brave, iOS, permissions) : l'e-mail via le SMTP
+// de l'hébergeur est le canal fiable. Sans SMTP_HOST (dev) : simulation dans
+// logs/mail.log pour vérifier les envois.
+const mailer = process.env.SMTP_HOST ? nodemailer.createTransport({
+  host: process.env.SMTP_HOST,
+  port: Number(process.env.SMTP_PORT) || 465,
+  secure: process.env.SMTP_SECURE !== '0',
+  auth: { user: process.env.SMTP_USER, pass: process.env.SMTP_PASS },
+}) : null;
+
+async function sendMail(to, subject, text, url) {
+  const body = `${text}\n\nOuvrir la carte : ${BASE_URL}${url || ''}\n\n— Entraide Feu · gérez vos alertes dans « Je dépanne » / Mon espace sur la carte`;
+  if (!mailer) {
+    fs.appendFileSync(path.join(LOG_DIR, 'mail.log'), `[${new Date().toISOString()}] à=${to} | ${subject} | ${text}\n`);
+    return;
+  }
+  await mailer.sendMail({ from: process.env.SMTP_FROM || process.env.SMTP_USER, to, subject: `🔥 ${subject}`, text: body });
+}
+
+// Notifier une identité par tous ses canaux disponibles
+async function notify(hash, payload) {
+  pushTo(hash, payload).catch(() => {});
+  try {
+    const r = await q('SELECT email FROM identities WHERE hash=? AND email IS NOT NULL', [hash]);
+    if (r.length) await sendMail(r[0].email, payload.title, payload.body || '', payload.url);
+  } catch (e) { logErr('notify-mail', e); }
+}
+
 // ---------- push ----------
 async function pushTo(hash, payload) {
   const rows = await q('SELECT subscription FROM watchers WHERE hash=? AND subscription IS NOT NULL', [hash]);
@@ -145,7 +175,7 @@ async function pushWatchers(ping) {
   for (const w of rows) {
     if (!w.cats.split(',').includes(ping.type)) continue;
     if (w.lat != null && distKm(+w.lat, +w.lng, +ping.lat, +ping.lng) > w.radius_km) continue;
-    pushTo(w.hash, payload); // fire and forget
+    notify(w.hash, payload); // fire and forget (e-mail + push)
   }
 }
 
@@ -332,11 +362,21 @@ app.post('/api/session/recover', limited('recover', 10), async (req, res) => {
   res.json({ ok: true, name: found[0].name });
 });
 
-// Profil d'onboarding (facultatif, sur l'honneur)
+// Profil d'onboarding (facultatif, sur l'honneur) — mise à jour partielle :
+// seuls les champs présents dans la requête sont modifiés
 app.post('/api/onboard', limited('onboard', 30), async (req, res) => {
-  const name = String(req.body.name || '').trim().slice(0, 40) || null;
-  const prof = ['pompier', 'policier', 'soignant'].includes(req.body.profession) ? req.body.profession : null;
-  await q('INSERT INTO identities (hash, name, profession) VALUES (?,?,?) ON DUPLICATE KEY UPDATE name=VALUES(name), profession=VALUES(profession)', [req.hash, name, prof]);
+  const cur = (await q('SELECT name, profession, email FROM identities WHERE hash=?', [req.hash]))[0] || {};
+  const name = req.body.name !== undefined ? (String(req.body.name).trim().slice(0, 40) || null) : cur.name ?? null;
+  const prof = req.body.profession !== undefined
+    ? (['pompier', 'policier', 'soignant'].includes(req.body.profession) ? req.body.profession : null)
+    : cur.profession ?? null;
+  let email = cur.email ?? null;
+  if (req.body.email !== undefined) {
+    const e = String(req.body.email).trim().toLowerCase().slice(0, 190);
+    if (e && !/^[^\s@]+@[^\s@]+\.[^\s@]{2,}$/.test(e)) return res.status(400).json({ error: 'E-mail invalide.' });
+    email = e || null; // champ vidé = e-mail supprimé
+  }
+  await q('INSERT INTO identities (hash, name, profession, email) VALUES (?,?,?,?) ON DUPLICATE KEY UPDATE name=VALUES(name), profession=VALUES(profession), email=VALUES(email)', [req.hash, name, prof, email]);
   res.json({ ok: true });
 });
 
@@ -350,7 +390,7 @@ app.get('/api/state', async (req, res) => {
   const ids = pings.map(p => p.id);
   const [updates, arrivals, myReqs, zones, alertCount, statsRow, meRows, myWatch, myExpired, officials] = await Promise.all([
     ids.length ? q(`SELECT ping_id, text, created_at FROM ping_updates WHERE ping_id IN (?) ORDER BY created_at`, [ids]) : [],
-    ids.length ? q(`SELECT a.ping_id, a.helper_hash, a.eta, a.phone, a.lat, a.lng, a.pos_at, a.created_at, i.name, i.profession
+    ids.length ? q(`SELECT a.ping_id, a.helper_hash, a.eta, a.phone, a.lat, a.lng, a.pos_at, a.join_status, a.created_at, i.name, i.profession
                     FROM arrivals a LEFT JOIN identities i ON i.hash=a.helper_hash WHERE a.ping_id IN (?)`, [ids]) : [],
     q(`SELECT c.*, p.title AS ping_title, p.owner_hash, ri.name AS requester_name, ri.profession AS requester_prof
        FROM contact_requests c JOIN pings p ON p.id=c.ping_id
@@ -358,9 +398,10 @@ app.get('/api/state', async (req, res) => {
        WHERE (c.requester_hash=? OR c.target_hash=? OR (c.target_hash='' AND p.owner_hash=?))
          AND c.created_at > NOW() - INTERVAL ${TTL_H} HOUR`, [req.hash, req.hash, req.hash]),
     q('SELECT id, label, lat, lng, radius_m FROM zones'),
-    q('SELECT COUNT(*) AS n FROM watchers WHERE subscription IS NOT NULL'),
+    q(`SELECT COUNT(*) AS n FROM watchers w JOIN identities i ON i.hash=w.hash
+       WHERE i.email IS NOT NULL OR w.subscription IS NOT NULL`),
     q("SELECT v FROM stats WHERE k='resolved'"),
-    q('SELECT name, profession FROM identities WHERE hash=?', [req.hash]),
+    q('SELECT name, profession, email FROM identities WHERE hash=?', [req.hash]),
     q('SELECT cats, lat, lng, radius_km, visible, offer_cats, subscription IS NOT NULL AS subscribed FROM watchers WHERE hash=?', [req.hash]),
     q(`SELECT id, kind, type, title, message, private_message, lat, lng FROM pings
        WHERE owner_hash=? AND created_at <= NOW() - INTERVAL ${TTL_H} HOUR AND created_at > NOW() - INTERVAL ${PURGE_H} HOUR`, [req.hash]),
@@ -374,10 +415,13 @@ app.get('/api/state', async (req, res) => {
   const out = pings.map(p => {
     const mine = p.owner_hash === req.hash;
     const list = arr[p.id] || [];
-    const engaged = mine || list.some(a => a.helper_hash === req.hash);
+    // partie privée : l'émetteur + les engagés — pour un refuge, uniquement les
+    // demandes ACCEPTÉES (l'adresse ne se révèle qu'après le oui de l'hébergeur)
+    const engaged = mine || list.some(a => a.helper_hash === req.hash && (p.type !== 'refuge' || a.join_status === 'accepted'));
     return {
       id: p.id, kind: p.kind, type: p.type, title: p.title, message: p.message,
       places: p.places, animals: p.animals == null ? null : !!p.animals, isFull: !!p.is_full,
+      accepted: p.type === 'refuge' ? list.filter(a => a.join_status === 'accepted').length : undefined,
       // partie privée : réservée à l'émetteur et à ceux qui ont dit « j'arrive »
       hasPrivate: !!p.private_message,
       privateMessage: engaged ? p.private_message : undefined,
@@ -389,6 +433,7 @@ app.get('/api/state', async (req, res) => {
         const self = a.helper_hash === req.hash;
         return {
           name: a.name, prof: a.profession, eta: a.eta, at: a.created_at, self,
+          joinStatus: (mine || self) ? a.join_status : undefined, // demandes refuge : émetteur + intéressé
           aid: mine ? aidOf(p.id, a.helper_hash) : undefined, // cible d'une demande de numéro
           phone: mine ? a.phone : undefined, // le numéro laissé par un dépanneur n'est visible que de l'émetteur
           // la position d'un dépanneur n'est visible que de l'émetteur (et de lui-même)
@@ -432,7 +477,7 @@ app.get('/api/state', async (req, res) => {
       alerte: alertCount[0]?.n || 0, // dépanneurs abonnés aux notifications
       resolved: statsRow[0]?.v || 0,
     },
-    me: { name: meRows[0]?.name || null, prof: meRows[0]?.profession || null, watch: myWatch[0] || null },
+    me: { name: meRows[0]?.name || null, prof: meRows[0]?.profession || null, email: meRows[0]?.email || null, watch: myWatch[0] || null },
     myExpired,
     contact,
     vapidKey: vapid.publicKey,
@@ -478,14 +523,15 @@ app.post('/api/pings/:id/arrive', limited('act', 120), async (req, res) => {
   const eta = ['~15 min', '~30 min', '~1 h', '~2 h et +'].includes(req.body.eta) ? req.body.eta : null;
   const phone = cleanPhone(req.body.phone);
   const pos = validHelperPos(req.body.lat, req.body.lng, p);
-  await q('INSERT INTO arrivals (ping_id, helper_hash, eta, phone, lat, lng, pos_at) VALUES (?,?,?,?,?,?,?)',
-    [p.id, req.hash, eta, phone, pos?.lat ?? null, pos?.lng ?? null, pos ? new Date() : null]);
+  const isRefuge = p.type === 'refuge'; // refuge : c'est une DEMANDE, à accepter/refuser
+  await q('INSERT INTO arrivals (ping_id, helper_hash, eta, phone, lat, lng, pos_at, join_status) VALUES (?,?,?,?,?,?,?,?)',
+    [p.id, req.hash, eta, phone, pos?.lat ?? null, pos?.lng ?? null, pos ? new Date() : null, isRefuge ? 'pending' : null]);
   const who = (await q('SELECT name, profession FROM identities WHERE hash=?', [req.hash]))[0] || {};
-  pushTo(p.owner_hash, {
-    title: `🚗 ${who.name || 'Quelqu’un'}${who.profession ? ' (se déclare ' + who.profession + ')' : ''} arrive`,
-    body: `${p.title}${eta ? ' — ' + eta : ''}`,
-    url: `/#p=${p.id}`,
-  }).catch(() => {});
+  const whoTxt = `${who.name || 'Quelqu’un'}${who.profession ? ' (se déclare ' + who.profession + ')' : ''}`;
+  notify(p.owner_hash, isRefuge
+    ? { title: `🙋 ${whoTxt} demande à rejoindre votre refuge`, body: `${p.title} — acceptez ou refusez depuis la fiche.`, url: `/#p=${p.id}` }
+    : { title: `🚗 ${whoTxt} arrive`, body: `${p.title}${eta ? ' — ' + eta : ''}`, url: `/#p=${p.id}` }
+  ).catch(() => {});
   res.json({ arrived: true });
 });
 
@@ -523,6 +569,23 @@ app.post('/api/pings/:id/close', limited('act', 120), async (req, res) => {
   }
   await q("UPDATE pings SET status='closed', closed_at=NOW() WHERE id=?", [p.id]);
   if (p.kind === 'besoin') await q("UPDATE stats SET v=v+1 WHERE k='resolved'");
+  res.json({ ok: true });
+});
+
+// Accepter / refuser une demande de refuge (émetteur uniquement)
+app.post('/api/pings/:id/join-respond', limited('act', 240), async (req, res) => {
+  const p = (await q("SELECT * FROM pings WHERE id=? AND status='open'", [req.params.id]))[0];
+  if (!p || p.owner_hash !== req.hash) return res.status(403).json({ error: 'Réservé à l’émetteur.' });
+  const arr = await q('SELECT helper_hash FROM arrivals WHERE ping_id=?', [p.id]);
+  const target = arr.find(a => aidOf(p.id, a.helper_hash) === req.body.aid);
+  if (!target) return res.status(404).json({ error: 'Demande introuvable.' });
+  const accept = !!req.body.accept;
+  await q('UPDATE arrivals SET join_status=? WHERE ping_id=? AND helper_hash=?',
+    [accept ? 'accepted' : 'declined', p.id, target.helper_hash]);
+  notify(target.helper_hash, accept
+    ? { title: '🟢 Demande acceptée !', body: `Vous pouvez rejoindre « ${p.title} » — les détails privés sont sur la fiche.`, url: `/#p=${p.id}` }
+    : { title: 'Réponse à votre demande de refuge', body: `« ${p.title} » n'a pas pu accepter votre demande. D'autres refuges sont sur la carte.`, url: '/' }
+  ).catch(() => {});
   res.json({ ok: true });
 });
 
@@ -569,7 +632,7 @@ app.post('/api/pings/:id/contact-request', limited('act', 60), async (req, res) 
     const target = arr.find(a => aidOf(p.id, a.helper_hash) === req.body.aid);
     if (!target) return res.status(404).json({ error: 'Dépanneur introuvable.' });
     await q('INSERT IGNORE INTO contact_requests (ping_id, requester_hash, target_hash) VALUES (?,?,?)', [p.id, req.hash, target.helper_hash]);
-    pushTo(target.helper_hash, {
+    notify(target.helper_hash, {
       title: `📞 ${who.name || 'L’émetteur'} demande votre numéro`,
       body: p.title, url: `/#p=${p.id}`,
     }).catch(() => {});
@@ -578,7 +641,7 @@ app.post('/api/pings/:id/contact-request', limited('act', 60), async (req, res) 
 
   if (p.owner_hash === req.hash) return res.status(400).json({ error: 'C’est votre propre ping.' });
   await q("INSERT IGNORE INTO contact_requests (ping_id, requester_hash, target_hash) VALUES (?,?,'')", [p.id, req.hash]);
-  pushTo(p.owner_hash, {
+  notify(p.owner_hash, {
     title: `📞 ${who.name || 'Quelqu’un'}${who.profession ? ' (se déclare ' + who.profession + ')' : ''} demande votre numéro`,
     body: p.title,
     url: `/#p=${p.id}`,
@@ -597,10 +660,10 @@ app.post('/api/contact/:reqId/respond', limited('act', 120), async (req, res) =>
     const phone = cleanPhone(req.body.phone);
     if (!phone) return res.status(400).json({ error: 'Numéro invalide.' });
     await q("UPDATE contact_requests SET status='accepted', phone=?, message=? WHERE id=?", [phone, message, c.id]);
-    pushTo(c.requester_hash, { title: '✅ Numéro partagé', body: `Pour « ${c.title} » — ouvrez la fiche.`, url: `/#p=${c.ping_id}` }).catch(() => {});
+    notify(c.requester_hash, { title: '✅ Numéro partagé', body: `Pour « ${c.title} » — ouvrez la fiche.`, url: `/#p=${c.ping_id}` }).catch(() => {});
   } else {
     await q("UPDATE contact_requests SET status='declined', message=? WHERE id=?", [message, c.id]);
-    if (message) pushTo(c.requester_hash, { title: '📨 Réponse à votre demande', body: `« ${c.title} » — ouvrez la fiche.`, url: `/#p=${c.ping_id}` }).catch(() => {});
+    if (message) notify(c.requester_hash, { title: '📨 Réponse à votre demande', body: `« ${c.title} » — ouvrez la fiche.`, url: `/#p=${c.ping_id}` }).catch(() => {});
   }
   res.json({ ok: true });
 });

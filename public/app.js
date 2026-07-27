@@ -345,10 +345,23 @@ function renderSheet(id, soft) {
   const myOut = state.contact.outgoing.find(c => c.pingId === p.id && !c.aid); // ma demande vers l'émetteur
 
   const isRefuge = p.type === 'refuge';
+  // refuge, côté demandeur : le statut de MA demande, impossible à rater
+  let joinBanner = '';
+  if (isRefuge && !p.mine) {
+    const my = p.arrivals.find(a => a.self);
+    if (my) {
+      joinBanner = my.joinStatus === 'accepted'
+        ? '<p class="warn" style="background:#1e3a26;border-color:#2e9e5b">🟢 <b>Demande acceptée !</b> Les détails privés sont débloqués ci-dessous — convenez de votre arrivée avec l\'hébergeur.</p>'
+        : my.joinStatus === 'declined'
+          ? '<p class="warn">🔴 Votre demande n\'a pas été retenue — d\'autres refuges sont sur la carte.</p>'
+          : '<p class="warn" style="background:#3a3320;border-color:#8a7a3a">⏳ <b>Demande envoyée</b> — en attente de la réponse de l\'hébergeur. L\'adresse exacte apparaîtra si elle est acceptée.</p>';
+    }
+  }
   let html = `<h3>${meta.emoji} ${esc(p.title)}</h3>
     ${p.isFull ? '<p class="warn" style="text-align:center"><b>⛔ COMPLET</b> — inutile de demander pour le moment</p>' : ''}
+    ${joinBanner}
     <div><span class="badge" style="background:${meta.color}">${p.kind === 'besoin' ? '🆘 SOS' : '🛟 Assistance'} — ${meta.label}</span>
-    ${isRefuge && p.places ? `<span class="badge">🛏️ ${p.places} places</span>` : ''}
+    ${isRefuge && p.places ? `<span class="badge">🛏️ ${p.places} places${p.accepted ? ' · 🟢 ' + p.accepted + ' acceptée(s)' : ''}</span>` : ''}
     ${isRefuge && p.animals != null ? `<span class="badge">${p.animals ? '🐾 animaux acceptés' : '🚫 pas d’animaux'}</span>` : ''}
     <span class="badge">${timeAgo(p.at)}</span>
     ${p.ownerName ? `<span class="badge">par ${esc(p.ownerName)}</span>` : ''}
@@ -362,7 +375,7 @@ function renderSheet(id, soft) {
   if (p.privateMessage) {
     html += `<div class="warn" style="border-color:#3a5a7a;background:#20303a">🔒 <b>Détails réservés :</b><br>${esc(p.privateMessage)}</div>`;
   } else if (p.hasPrivate) {
-    html += `<p class="muted small">🔒 ${isRefuge ? 'Ce refuge' : 'Ce SOS'} contient des détails privés (adresse exacte, contact…) visibles après avoir cliqué «&nbsp;${isRefuge ? 'Demander à rejoindre' : 'J\'arrive'}&nbsp;».</p>`;
+    html += `<p class="muted small">🔒 ${isRefuge ? 'Ce refuge contient des détails privés (adresse exacte…) visibles une fois votre demande acceptée par l\'hébergeur.' : 'Ce SOS contient des détails privés (adresse exacte, contact…) visibles après avoir cliqué « J\'arrive ».'}</p>`;
   }
   if (p.photo) html += `<img src="/uploads/${esc(p.photo)}" alt="photo" loading="lazy">`;
   if (p.audio) html += `<audio controls preload="none" src="/uploads/${esc(p.audio)}"></audio>`;
@@ -373,7 +386,30 @@ function renderSheet(id, soft) {
     html += `</div>`;
   }
 
-  if (p.arrivals.length) {
+  // refuge, côté hébergeur : le tableau de bord des demandes, en évidence,
+  // avec accepter / refuser explicites pour chacune
+  if (isRefuge && p.mine && p.arrivals.length) {
+    html += `<div class="req-box"><b>🙋 Demandes pour rejoindre (${p.arrivals.length})</b>`;
+    for (const a of p.arrivals) {
+      const who = `${esc(a.name || 'Quelqu’un')}${a.prof ? ' <span class="badge prof">' + PROF_LABEL[a.prof] + '</span>' : ''}`;
+      let phoneBit = '';
+      if (a.phone) phoneBit = ` <a href="tel:${esc(a.phone)}">📞 ${esc(a.phone)}</a>`;
+      else if (a.aid) {
+        const o = state.contact.outgoing.find(c => c.pingId === p.id && c.aid === a.aid);
+        if (!o) phoneBit = ` <button class="btn ghost small-btn askNum" data-aid="${esc(a.aid)}">📞 Demander</button>`;
+        else if (o.status === 'accepted') phoneBit = ` <a href="tel:${esc(o.phone)}">📞 ${esc(o.phone)}</a>`;
+        else if (o.status === 'pending') phoneBit = ' <span class="muted small">📞 demandé…</span>';
+      }
+      let right;
+      if (a.joinStatus === 'pending') right = `<span class="req-actions">
+          <button class="btn help small-btn joinAcc" data-aid="${esc(a.aid)}">✅ Accepter</button>
+          <button class="btn ghost small-btn joinRef" data-aid="${esc(a.aid)}">❌ Refuser</button></span>`;
+      else if (a.joinStatus === 'accepted') right = `<span class="badge" style="background:#2e9e5b">🟢 acceptée</span>${phoneBit}`;
+      else right = '<span class="badge">🔴 refusée</span>';
+      html += `<div class="req-row"><span>${who}${a.joinStatus === 'pending' ? phoneBit : ''}</span>${right}</div>`;
+    }
+    html += '</div>';
+  } else if (p.arrivals.length) {
     html += `<div class="arrivals"><b>${isRefuge ? '🙋 ' + p.arrivals.length + ' demande(s)' : '🚗 ' + p.arrivals.length + ' en route'} :</b><ul>`;
     for (const a of p.arrivals) {
       let contactBit = '';
@@ -404,6 +440,14 @@ function renderSheet(id, soft) {
   el.querySelectorAll('.askNum').forEach(b => b.onclick = async () => {
     try { await api(`/api/pings/${p.id}/contact-request`, { json: { aid: b.dataset.aid } }); toast('Demande envoyée 📞'); poll(); }
     catch (e) { toast(e.message, true); }
+  });
+  el.querySelectorAll('.joinAcc, .joinRef').forEach(b => b.onclick = async () => {
+    const accept = b.classList.contains('joinAcc');
+    try {
+      await api(`/api/pings/${p.id}/join-respond`, { json: { aid: b.dataset.aid, accept } });
+      toast(accept ? 'Demande acceptée 🟢 — la personne est prévenue' : 'Demande refusée — la personne est prévenue');
+      poll();
+    } catch (e) { toast(e.message, true); }
   });
   const act = $('#fActions');
 
@@ -470,11 +514,11 @@ function renderSheet(id, soft) {
       const pos = await getPosition();
       try {
         await api(`/api/pings/${p.id}/arrive`, { json: { eta: chipsValues($('#arrEta'))[0], phone: $('#arrPhone').value.trim(), lat: pos?.lat, lng: pos?.lng } });
-        toast('C’est noté, vous êtes attendu 💪'); askNotifPermission(); poll();
+        toast('C’est noté, vous êtes attendu 💪'); poll();
       } catch (e) { toast(e.message, true); }
     };
     $('#fAskPhone').onclick = async () => {
-      try { await api(`/api/pings/${p.id}/contact-request`, { method: 'POST', json: {} }); toast('Demande envoyée — réponse ici même'); askNotifPermission(); poll(); } catch (e) { toast(e.message, true); }
+      try { await api(`/api/pings/${p.id}/contact-request`, { method: 'POST', json: {} }); toast('Demande envoyée — réponse ici même'); poll(); } catch (e) { toast(e.message, true); }
     };
   }
   const shareBtn = $('#fShare');
@@ -699,42 +743,17 @@ async function subscribePush() {
     return await reg.pushManager.subscribe({ userVisibleOnly: true, applicationServerKey: arr });
   } catch (e) { lastPushError = 'abonnement : ' + e.name + ' — ' + e.message; return null; }
 }
-async function askNotifPermission() {
-  // pour l'émetteur / demandeur : un abonnement minimal suffit à recevoir ses notifications ciblées
-  if (!pushSupported() || Notification.permission === 'granted') return;
-  const sub = await subscribePush();
-  if (sub) await api('/api/watch', { json: { ...currentWatchPrefs(), subscription: sub } }).catch(() => {});
-}
-function currentWatchPrefs() {
-  const w = state?.me?.watch;
-  return {
-    cats: w ? w.cats.split(',').filter(Boolean) : [],
-    lat: w?.lat, lng: w?.lng, radiusKm: w?.radius_km || 20,
-  };
-}
 
-// Diagnostic notifications : dire POURQUOI ça ne marche pas et comment débloquer
-// (un refus de permission ne peut jamais être contourné par le site — choix des navigateurs)
+// Statut des alertes : l'e-mail est le canal principal (fiable partout),
+// le push navigateur n'est qu'un bonus silencieux quand il fonctionne
 function notifDiagnostic() {
-  const extra = [];
-  if (navigator.brave) extra.push('🦁 Brave détecté : le push exige « Utiliser les services Google pour la messagerie push » dans brave://settings/privacy (puis redémarrer Brave).');
-  if (lastPushError) extra.push('⚙️ Dernier échec : ' + lastPushError);
-  const tail = extra.length ? '\n' + extra.join('\n') : '';
-  if (!window.isSecureContext)
-    return '🔒 Connexion non sécurisée : notifications impossibles. Utilisez l\'adresse HTTPS du site.' + tail;
-  if (isIosNoPush())
-    return '📱 iPhone : ajoutez d\'abord le site à l\'écran d\'accueil (Partager → Sur l\'écran d\'accueil), puis revenez activer.' + tail;
-  if (!('serviceWorker' in navigator) || !('PushManager' in window) || typeof Notification === 'undefined')
-    return '❌ Ce navigateur ne prend pas en charge les notifications. Astuce : onglet ouvert, les alertes s\'affichent quand même dans la page.' + tail;
-  switch (Notification.permission) {
-    case 'granted':
-      return (state?.me?.watch?.subscribed ? '✅ Notifications actives sur cet appareil.'
-        : '🟡 Autorisées — cliquez Enregistrer pour les activer.') + tail;
-    case 'denied':
-      return '🚫 Bloquées pour ce site. Pour débloquer : cadenas (ou ⋮) dans la barre d\'adresse → Autorisations → Notifications → Autoriser, puis revenez et ré-enregistrez. En attendant, onglet ouvert = alertes dans la page.' + tail;
-    default:
-      return '🔔 Le navigateur demandera votre accord au moment d\'enregistrer.' + tail;
-  }
+  const email = $('#helpEmail')?.value.trim() || state?.me?.email;
+  const parts = [email
+    ? `📧 Alertes envoyées à ${email}.`
+    : '📧 Renseignez un e-mail : c\'est le canal des alertes (fiable sur tous les appareils).'];
+  if (typeof Notification !== 'undefined' && Notification.permission === 'granted' && state?.me?.watch?.subscribed)
+    parts.push('➕ Notifications navigateur actives en complément.');
+  return parts.join(' ');
 }
 
 /* ---------- panneau je dépanne ---------- */
@@ -748,9 +767,9 @@ function setupHelp() {
       const watched = w.cats.split(',');
       $('#helpCats').querySelectorAll('.chip').forEach(c => c.classList.toggle('on', watched.includes(c.dataset.v)));
       $('#helpRadius').value = w.radius_km; $('#helpRadiusVal').textContent = w.radius_km + ' km';
-      $('#helpNotif').checked = !!w.subscribed;
     }
-    $('#helpIosHint').hidden = true; // remplacé par le diagnostic détaillé
+    $('#helpEmail').value = state?.me?.email || '';
+    $('#helpIosHint').hidden = true;
     $('#notifStatus').textContent = notifDiagnostic();
     panel.classList.remove('hidden');
   };
@@ -767,16 +786,11 @@ function setupHelp() {
   $('#helpSave').onclick = async () => {
     const cats = chipsValues($('#helpCats'));
     if (!cats.length) return toast('Cochez au moins une catégorie à surveiller', true);
-    const wantNotif = $('#helpNotif').checked;
-    // ORDRE CRITIQUE : la permission de notification DOIT être demandée en
-    // premier, dans la foulée du clic — l'« activation utilisateur » expire en
-    // ~5 s, et la géoloc (prompt + GPS) consommait ce délai → refus automatique
-    let sub = null;
-    if (wantNotif) {
-      sub = await subscribePush();
-      if (!sub && isIosNoPush()) toast('iPhone : ajoutez le site à l’écran d’accueil pour les notifications', true);
-      else if (!sub) toast('Notifications impossibles — détail affiché sous la case', true);
-    }
+    const email = $('#helpEmail').value.trim();
+    if (!email) return toast('Un e-mail est nécessaire pour recevoir les alertes', true);
+    try { await api('/api/onboard', { json: { email } }); } catch (e) { return toast(e.message, true); }
+    // push navigateur tenté en bonus, jamais bloquant ni bavard
+    const sub = await subscribePush().catch(() => null);
     // la position ne sert qu'à filtrer les alertes dans le rayon choisi
     let pos = { lat: state?.me?.watch?.lat, lng: state?.me?.watch?.lng };
     const got = await getPosition();
@@ -786,9 +800,7 @@ function setupHelp() {
       await api('/api/watch', {
         json: { cats, lat: pos.lat, lng: pos.lng, radiusKm: +$('#helpRadius').value, subscription: sub || undefined },
       });
-      toast('Alertes configurées 🔔');
-      $('#notifStatus').textContent = notifDiagnostic();
-      if (wantNotif && !sub) return; // panneau laissé ouvert : le diagnostic explique quoi faire
+      toast('Alertes par e-mail configurées 🔔');
       panel.classList.add('hidden');
       poll();
     } catch (e) { toast(e.message, true); }
@@ -801,13 +813,14 @@ function setupProfile() {
   $('#btnProfile').onclick = () => {
     const me = state?.me || {};
     $('#pfName').value = me.name || '';
+    $('#pfEmail').value = me.email || '';
     $('#pfProf').querySelectorAll('.chip').forEach(c => c.classList.toggle('on', c.dataset.v === me.prof));
     $('#profileModal').classList.remove('hidden');
   };
   $('#pfCancel').onclick = () => $('#profileModal').classList.add('hidden');
   $('#pfSave').onclick = async () => {
     try {
-      await api('/api/onboard', { json: { name: $('#pfName').value.trim(), profession: chipsValues($('#pfProf'))[0] || null } });
+      await api('/api/onboard', { json: { name: $('#pfName').value.trim(), profession: chipsValues($('#pfProf'))[0] || null, email: $('#pfEmail').value.trim() } });
       toast('Profil enregistré 👤');
       $('#profileModal').classList.add('hidden');
       poll();
@@ -870,6 +883,7 @@ function obGoto(n) {
   obStep = n;
   for (let i = 1; i <= 5; i++) $('#ob' + i).classList.toggle('hidden', i !== n);
   $('#obCode').classList.add('hidden');
+  $('#obAlert').classList.add('hidden');
   renderObDots();
 }
 // points de navigation : cliquables, agrandis, l'étape courante en surbrillance
@@ -931,7 +945,21 @@ function setupOnboarding() {
     if (await copyText($('#obCodeValue').textContent)) toast('Code copié 📋');
     else toast('Copie bloquée — notez-le à la main', true);
   };
-  $('#obCodeOk').onclick = () => { $('#obCode').classList.add('hidden'); obGoto(5); };
+  $('#obCodeOk').onclick = () => {
+    for (let i = 1; i <= 5; i++) $('#ob' + i).classList.add('hidden');
+    $('#obCode').classList.add('hidden');
+    $('#obAlert').classList.remove('hidden'); // proposition d'alertes e-mail
+  };
+  $('#obAlertGo').onclick = async () => {
+    const email = $('#obEmail').value.trim();
+    if (!email) return toast('Renseignez votre e-mail (ou « Plus tard »)', true);
+    try { await api('/api/onboard', { json: { email } }); } catch (e) { return toast(e.message, true); }
+    $('#obAlert').classList.add('hidden');
+    $('#onboarding').classList.add('hidden');
+    poll();
+    $('#btnHelp').click(); // enchaîne sur la configuration des alertes (catégories, rayon)
+  };
+  $('#obAlertLater').onclick = () => { $('#obAlert').classList.add('hidden'); obGoto(5); };
   $('#obRecover').onclick = async () => {
     const code = prompt('Entrez votre code de session (FEU-XXXX-XXXX) :');
     if (!code) return;
@@ -964,9 +992,13 @@ function setupUI() {
   $('#placeOk').onclick = submitPing;
   $('#doneClose').onclick = () => $('#doneModal').classList.add('hidden');
   $('#doneNotif').onclick = async () => {
-    await askNotifPermission();
-    const ok = typeof Notification !== 'undefined' && Notification.permission === 'granted';
-    toast(ok ? 'Notifications activées 🔔' : 'Notifications indisponibles sur cet appareil', !ok);
+    let email = state?.me?.email;
+    if (!email) {
+      email = (prompt('Votre e-mail pour être prévenu des réponses :') || '').trim();
+      if (!email) return;
+      try { await api('/api/onboard', { json: { email } }); poll(); } catch (e) { return toast(e.message, true); }
+    }
+    toast(`Vous serez prévenu par e-mail (${email}) ✅`);
   };
   setupEmit(); setupHelp(); setupOnboarding(); setupProfile();
 }

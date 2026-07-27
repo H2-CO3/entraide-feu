@@ -88,7 +88,7 @@ a { color: #7ab8ff; }
 .ob-card h2, .modal h2 { margin-bottom: .5rem; }
 .lead { margin: .5rem 0 .8rem; line-height: 1.45; }
 .ob-card p { margin: .5rem 0; }
-input[type=text], input[type=tel], textarea {
+input[type=text], input[type=tel], input[type=email], input[type=number], textarea {
   width: 100%; background: #1a1f2c; color: #eef0f4; border: 1px solid #3a4152;
   border-radius: 10px; padding: .7rem; font-size: 1rem; margin: .35rem 0; font-family: inherit;
 }
@@ -211,6 +211,19 @@ input[type=text], input[type=tel], textarea {
 }
 .toast.err { background: #d64541; }
 @keyframes fadein { from { opacity: 0; transform: translateY(-8px); } }
+
+/* ---- demandes de refuge (tableau de bord hébergeur) ---- */
+.req-box {
+  background: #2b2416; border-left: 4px solid #e0a939; border-radius: 10px;
+  padding: .7rem .9rem .4rem; margin: .6rem 0; font-size: .95rem;
+}
+.req-box > b { color: #ffd27a; font-size: .85rem; }
+.req-row {
+  display: flex; justify-content: space-between; align-items: center; gap: .5rem;
+  margin: .55rem 0; flex-wrap: wrap;
+}
+.req-actions { display: flex; gap: .45rem; }
+.req-actions .btn { margin: 0; width: auto; }
 
 /* ---- partage ---- */
 .share-grid { display: grid; grid-template-columns: 1fr 1fr; gap: .55rem; margin: .6rem 0; }

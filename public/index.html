@@ -77,6 +77,17 @@
       <button class="btn big" id="obCodeOk">C'est noté</button>
       <p class="ob-dots"></p>
     </div>
+    <div class="ob-step hidden" id="obAlert">
+      <p class="ob-emoji">🔔</p>
+      <h1>Être alerté&nbsp;?</h1>
+      <p class="lead small">Recevez un <b>e-mail</b> quand un SOS proche correspond à ce que vous
+      pouvez faire, et quand quelqu'un répond à vos publications.</p>
+      <input id="obEmail" type="email" placeholder="votre@email.fr" autocomplete="email">
+      <p class="small muted">Jamais affiché publiquement, jamais transmis — il ne sert qu'à vous prévenir.</p>
+      <button class="btn big" id="obAlertGo">🔔 Activer et configurer mes alertes</button>
+      <button class="linklike" id="obAlertLater">Plus tard</button>
+      <p class="ob-dots"></p>
+    </div>
     <div class="ob-step hidden" id="ob5">
       <p class="ob-emoji">🤝</p>
       <h1>On commence&nbsp;?</h1>
@@ -174,10 +185,10 @@
     <label class="rangeLabel">Rayon d'alerte : <b id="helpRadiusVal">20 km</b>
       <input type="range" id="helpRadius" min="2" max="100" value="20">
     </label>
-    <label class="switch"><input type="checkbox" id="helpNotif" checked> 🔔 Recevoir les notifications</label>
+    <input id="helpEmail" type="email" placeholder="E-mail pour recevoir les alertes *" autocomplete="email">
     <p class="small" id="notifStatus" style="white-space:pre-line"></p>
-    <p class="small muted">Votre position ne sert qu'à filtrer les alertes — elle n'est jamais affichée publiquement.
-    Elle n'est partagée qu'avec un émetteur précis, au moment où vous cliquez «&nbsp;j'arrive&nbsp;» sur sa fiche.</p>
+    <p class="small muted">E-mail et position ne sont jamais affichés publiquement — ils ne servent qu'à vous alerter.
+    Votre position n'est partagée qu'avec un émetteur précis, quand vous cliquez «&nbsp;j'arrive&nbsp;».</p>
     <p class="small muted" id="helpIosHint" hidden>📱 Sur iPhone : ajoutez d'abord le site à l'écran d'accueil (Partager → Sur l'écran d'accueil) pour recevoir les notifications.</p>
     <div class="row">
       <button class="btn ghost small-btn" id="helpOffer">🏠 Ouvrir un refuge</button>
@@ -268,6 +279,7 @@
 
     <p class="small muted">Identité liée à ce navigateur — visible sur vos fiches et vos «&nbsp;j'arrive&nbsp;».</p>
     <input id="pfName" type="text" maxlength="40" placeholder="Prénom ou pseudo" autocomplete="given-name">
+    <input id="pfEmail" type="email" placeholder="E-mail pour les alertes (vider = supprimer)" autocomplete="email">
     <div class="chips" id="pfProf">
       <button class="chip" data-v="pompier">🚒 Pompier</button>
       <button class="chip" data-v="policier">👮 Policier</button>
