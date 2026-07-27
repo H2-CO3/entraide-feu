@@ -111,8 +111,20 @@ input[type=text], input[type=tel], textarea {
 .badge.zone { background: #6e2929; color: #ffc9c9; }
 .sheet img { max-width: 100%; border-radius: 10px; margin: .5rem 0; }
 .sheet audio { width: 100%; margin: .4rem 0; }
-.updates { border-left: 3px solid #3a4152; padding-left: .6rem; margin: .5rem 0; }
-.updates div { font-size: .88rem; margin: .3rem 0; }
+/* mises à jour : le canal vivant de la fiche, bien visible */
+.updates-box {
+  background: #1e2c42; border-left: 4px solid #2f6fed; border-radius: 10px;
+  padding: .7rem .9rem; margin: .6rem 0; font-size: .95rem;
+}
+.updates-box > b { color: #9cc2ff; font-size: .85rem; }
+.upd-item { margin: .45rem 0 0; line-height: 1.4; }
+.upd-item:first-of-type { font-weight: 600; } /* la plus récente ressort */
+.upd-compose {
+  background: #1e2c42; border: 1px dashed #3a5a8a; border-radius: 12px;
+  padding: .7rem .8rem .2rem; margin: .5rem 0 .7rem;
+}
+.upd-compose > b { color: #9cc2ff; font-size: .85rem; }
+.upd-compose .btn { margin-top: .1rem; }
 .arrivals { margin: .5rem 0; font-size: .92rem; }
 .arrivals li { margin: .2rem 0 .2rem 1.2rem; }
 

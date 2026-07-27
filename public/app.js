@@ -355,7 +355,12 @@ function renderSheet(id, soft) {
   }
   if (p.photo) html += `<img src="/uploads/${esc(p.photo)}" alt="photo" loading="lazy">`;
   if (p.audio) html += `<audio controls preload="none" src="/uploads/${esc(p.audio)}"></audio>`;
-  for (const u of p.updates) html += `<div class="updates"><div>🔄 ${esc(u.text)} <span class="muted small">(${timeAgo(u.at)})</span></div></div>`;
+  if (p.updates.length) {
+    html += `<div class="updates-box"><b>📢 Mises à jour de l'émetteur</b>`;
+    for (const u of [...p.updates].reverse()) // la plus récente d'abord
+      html += `<div class="upd-item">${esc(u.text)}<span class="muted small"> — ${timeAgo(u.at)}</span></div>`;
+    html += `</div>`;
+  }
 
   if (p.arrivals.length) {
     html += `<div class="arrivals"><b>${isRefuge ? '🙋 ' + p.arrivals.length + ' demande(s)' : '🚗 ' + p.arrivals.length + ' en route'} :</b><ul>`;
@@ -393,9 +398,12 @@ function renderSheet(id, soft) {
 
   if (p.mine) {
     act.innerHTML = `
+      <div class="upd-compose">
+        <b>📢 Tenez tout le monde au courant</b>
+        <textarea id="fUpd" rows="2" maxlength="300" placeholder="Ex : plus besoin d'eau · besoin de gants · quelqu'un est en route…"></textarea>
+        <button class="btn" id="fUpdBtn">📢 Publier la mise à jour</button>
+      </div>
       ${isRefuge ? `<div class="row"><button class="btn ${p.isFull ? 'help' : 'ghost'}" id="fFull">${p.isFull ? '🟢 Rouvrir des places' : '⛔ Afficher complet'}</button></div>` : ''}
-      <textarea id="fUpd" rows="2" maxlength="300" placeholder="Ajouter une mise à jour (ex : plus besoin d'eau, besoin de gants)"></textarea>
-      <div class="row"><button class="btn ghost" id="fUpdBtn">🔄 Publier la mise à jour</button></div>
       <div class="row"><button class="btn ghost" id="fShare">📤 Partager</button><button class="btn" id="fClose">✅ Clôturer</button></div>
       <p class="small muted">🔑 Code de secours : <b>${esc(p.closeCode || '')}</b> — si vous perdez cet appareil,
       ce code permet de clôturer ${isRefuge ? 'ce refuge' : 'ce SOS'} depuis n'importe quel autre.</p>`;
@@ -482,10 +490,26 @@ function renderSheet(id, soft) {
   };
 }
 
-function sharePing(p) {
+// Copie robuste : API moderne → repli execCommand → affichage manuel.
+// On ne dit JAMAIS « copié » sans que ce soit vrai (Brave & co refusent parfois).
+async function copyText(text) {
+  try { await navigator.clipboard.writeText(text); return true; } catch {}
+  try {
+    const ta = document.createElement('textarea');
+    ta.value = text; ta.style.cssText = 'position:fixed;opacity:0';
+    document.body.appendChild(ta); ta.select();
+    const ok = document.execCommand('copy');
+    ta.remove();
+    if (ok) return true;
+  } catch {}
+  return false;
+}
+
+async function sharePing(p) {
   const url = `${location.origin}/p/${p.id}`;
-  if (navigator.share) navigator.share({ title: p.title, url }).catch(() => {});
-  else { navigator.clipboard?.writeText(url); toast('Lien copié 📋'); }
+  if (navigator.share) { navigator.share({ title: p.title, url }).catch(() => {}); return; }
+  if (await copyText(url)) toast('Lien copié 📋');
+  else prompt('Copie bloquée par le navigateur — copiez le lien manuellement :', url);
 }
 
 /* ---------- émission ---------- */
