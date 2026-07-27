@@ -110,6 +110,9 @@ le feu bouge, la carte doit refléter le terrain du jour.
   derniers points conservés, saisie admin toujours possible.
 - Géocodage Nominatim : heuristique en cascade, bornée au Sud-Ouest (constante
   `BBOX` dans importer.js — à adapter si fork ailleurs).
+- Constantes territoriales à adapter en cas de fork hors métropole :
+  `BBOX` (importer.js, géocodage), `FIRMS_BBOX` (server.js, détections feux),
+  `MAP_BOUNDS` + vue initiale (public/app.js, zone navigable de la carte).
 - Push iOS : exige l'ajout à l'écran d'accueil (limitation Apple, contournement
   affiché à l'utilisateur).
 - Tuiles OSM publiques : suffisant à l'échelle départementale, prévoir un

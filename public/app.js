@@ -85,8 +85,16 @@ function chipsToggle(container, multi = true) {
 const chipsValues = container => [...container.querySelectorAll('.chip.on')].map(c => c.dataset.v);
 
 /* ---------- carte ---------- */
+// Zone navigable : France métropolitaine élargie. Outil de crise territorial —
+// aucun cas d'usage planétaire, et ça règle par construction la disparition des
+// marqueurs sur les copies du monde. À adapter si fork ailleurs (cf. ARCHITECTURE).
+const MAP_BOUNDS = [[40.5, -6.5], [51.8, 10.5]]; // [sud-ouest], [nord-est]
 function initMap() {
-  map = L.map('map', { zoomControl: false, attributionControl: false }).setView([44.8, -0.9], 9); // Gironde
+  map = L.map('map', {
+    zoomControl: false, attributionControl: false,
+    minZoom: 5, maxBounds: MAP_BOUNDS, maxBoundsViscosity: .8,
+    worldCopyJump: true, // ceinture de sécurité si un bord était atteint quand même
+  }).setView([44.8, -0.9], 9); // Gironde
   L.control.attribution({ position: 'topright', prefix: false }).addTo(map);
   L.tileLayer('https://tile.openstreetmap.org/{z}/{x}/{y}.png', {
     maxZoom: 19, attribution: '© OpenStreetMap',
