@@ -198,14 +198,18 @@ function render() {
   for (const [id, m] of markers) if (!keep.has(id)) { cluster.removeLayer(m); markers.delete(id); }
   cluster.refreshClusters();
 
-  // dépanneurs en route vers MES fiches : 🚗 visibles de moi seul (émetteur)
+  // positions partagées 🚗 : l'émetteur voit ses dépanneurs en route, et le
+  // dépanneur voit SA propre position (confirmation de ce que l'autre voit).
+  // Le serveur ne fournit lat/lng qu'à ces deux-là — le filtre est en amont.
   carLayers.forEach(l => l.remove());
   carLayers = [];
-  for (const p of state.pings.filter(p => p.mine)) {
-    for (const a of p.arrivals.filter(a => a.lat != null && !a.self)) {
+  for (const p of state.pings) {
+    for (const a of p.arrivals.filter(a => a.lat != null)) {
       carLayers.push(L.marker([a.lat, a.lng], {
-        icon: L.divIcon({ className: '', html: '<div class="pin">🚗</div>', iconSize: [28, 28], iconAnchor: [14, 14] }),
-      }).addTo(map).bindTooltip(`🚗 ${a.name || 'Dépanneur'} → « ${p.title.slice(0, 30)} »${a.posAt ? ' · position ' + timeAgo(a.posAt) : ''}`));
+        icon: L.divIcon({ className: '', html: `<div class="pin"${a.self ? ' style="filter:hue-rotate(120deg)"' : ''}>🚗</div>`, iconSize: [28, 28], iconAnchor: [14, 14] }),
+      }).addTo(map).bindTooltip(a.self
+        ? `🚗 Vous → « ${p.title.slice(0, 30)} » — position partagée avec l'émetteur${a.posAt ? ' ' + timeAgo(a.posAt) : ''}`
+        : `🚗 ${a.name || 'Dépanneur'} → « ${p.title.slice(0, 30)} »${a.posAt ? ' · position ' + timeAgo(a.posAt) : ''}`));
     }
   }
 
