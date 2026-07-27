@@ -561,7 +561,15 @@ app.post('/api/pings/:id/arrive', limited('act', 120), async (req, res) => {
   const existing = await q('SELECT 1 FROM arrivals WHERE ping_id=? AND helper_hash=?', [p.id, req.hash]);
   if (req.body.cancel || existing.length) {
     await q('DELETE FROM arrivals WHERE ping_id=? AND helper_hash=?', [p.id, req.hash]);
-    if (!req.body.cancel && !existing.length) return res.json({ arrived: false });
+    // le contre-message est aussi important que l'annonce : sans lui, l'émetteur
+    // attend une aide qui ne viendra pas (son dernier e-mail disait « X arrive »)
+    if (existing.length) {
+      const who = (await q('SELECT name FROM identities WHERE hash=?', [req.hash]))[0] || {};
+      notify(p.owner_hash, p.type === 'refuge'
+        ? { title: `🚫 ${who.name || 'Quelqu’un'} a retiré sa demande`, body: p.title, url: `/#p=${p.id}` }
+        : { title: `🚫 ${who.name || 'Quelqu’un'} ne peut plus venir`, body: `${p.title} — pensez à repartager votre SOS si besoin.`, url: `/#p=${p.id}` }
+      ).catch(() => {});
+    }
     return res.json({ arrived: false });
   }
   const eta = ['~15 min', '~30 min', '~1 h', '~2 h et +'].includes(req.body.eta) ? req.body.eta : null;
