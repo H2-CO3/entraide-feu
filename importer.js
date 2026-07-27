@@ -6,10 +6,17 @@
    par l'admin (auto=0) ne sont jamais touchés. */
 const { q } = require('./db');
 
-const PAGES = [
-  { url: 'https://alertesfeux.fr/solidarite', defaultType: 'collecte' },
-  { url: 'https://alertesfeux.fr/animaux', defaultType: 'info' },
-];
+// Sources d'import des points officiels — surchageables par IMPORT_SOURCES dans
+// .env (format « url|type,url|type », valeur « none » = import désactivé).
+// Le parseur attend le gabarit HTML <article class="org"> d'alertesfeux.fr ;
+// pour une autre source, adapter parsePage() ou saisir les points via l'admin.
+const PAGES = process.env.IMPORT_SOURCES === 'none' ? []
+  : process.env.IMPORT_SOURCES
+    ? process.env.IMPORT_SOURCES.split(',').map(s => { const [url, t] = s.trim().split('|'); return { url, defaultType: t || 'collecte' }; })
+    : [
+      { url: 'https://alertesfeux.fr/solidarite', defaultType: 'collecte' },
+      { url: 'https://alertesfeux.fr/animaux', defaultType: 'info' },
+    ];
 const UA = 'EntraideFeu/1.0 (+https://github.com/H2-CO3/entraide-feu)';
 const strip = s => String(s || '').replace(/<[^>]+>/g, ' ').replace(/&nbsp;/g, ' ').replace(/&amp;/g, '&').replace(/&#39;|&apos;/g, '’').replace(/&quot;/g, '"').replace(/\s+/g, ' ').trim();
 const sleep = ms => new Promise(r => setTimeout(r, ms));
@@ -69,8 +76,10 @@ function geocodeCandidates(item) {
 }
 
 // Recherche bornée à la zone couverte : évite qu'un libellé ambigu
-// (« 28 communes ») atterrisse à l'autre bout de la France
-const BBOX = { minLat: 43.3, maxLat: 46.2, minLng: -2.0, maxLng: 1.5 }; // Gironde/Landes élargi — à adapter si on fork ailleurs
+// (« 28 communes ») atterrisse à l'autre bout de la France.
+// Pilotée par GEO_BBOX dans .env (west,south,east,north) — cf. FORKING.md
+const G = String(process.env.GEO_BBOX || '-2.0,43.3,1.5,46.2').split(',').map(Number);
+const BBOX = { minLng: G[0], minLat: G[1], maxLng: G[2], maxLat: G[3] };
 async function geocode(query) {
   const key = ('v2|' + query).slice(0, 191);
   const cached = await q('SELECT lat, lng, ok FROM geocode_cache WHERE q=?', [key]);
@@ -87,6 +96,7 @@ async function geocode(query) {
 }
 
 async function runImport() {
+  if (!PAGES.length) return { ok: 0, skipped: 0, total: 0, disabled: true };
   const found = [];
   for (const page of PAGES) {
     const r = await fetch(page.url, { headers: { 'User-Agent': UA }, signal: AbortSignal.timeout(20000) });

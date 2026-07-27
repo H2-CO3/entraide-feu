@@ -103,18 +103,21 @@
 <header id="topbar">
   <div class="row1">
     <span class="logo">🔥 Entraide Feu</span>
-    <button class="chip profile-btn" id="btnProfile" title="Mon espace">👤</button>
+    <button class="chip profile-btn" id="btnProfile" title="Mon espace" aria-label="Mon espace">👤</button>
   </div>
   <div class="chips" id="filters">
     <button class="chip on" data-f="all">Tout</button>
     <button class="chip" data-f="besoin">🆘 SOS</button>
     <button class="chip" data-f="offre">🛟 Assistance</button>
-    <button class="chip on" id="fireToggle" title="Points chauds satellites NASA">🛰️ Feux</button>
+    <button class="chip on" id="fireToggle" title="Points chauds satellites NASA" aria-label="Afficher ou masquer les feux satellites">🛰️ Feux</button>
     <button class="chip" id="infoBtn" title="Légende et renseignements officiels">ℹ️ Infos</button>
   </div>
 </header>
 
 <div id="map"></div>
+
+<!-- bandeau perte de connexion : en crise, une donnée périmée doit se voir -->
+<div id="offlineBar" class="hidden" role="alert">⚠️ <b>Connexion perdue</b> — données affichées : <span id="offlineSince">—</span>. Reconnexion en cours…</div>
 
 <!-- bannière fiches expirées à re-déclarer -->
 <div id="redeclare" class="banner hidden"></div>
@@ -140,7 +143,7 @@
 <div id="placeBar" class="hidden">
   <p>🗺️ Déplacez la <b>carte</b> pour amener le repère à l'endroit exact <span id="placeWarn" class="warn-inline hidden"></span></p>
   <div class="row">
-    <button class="btn ghost small-btn" id="placeLocate" title="Utiliser ma position">🎯</button>
+    <button class="btn ghost small-btn" id="placeLocate" title="Utiliser ma position" aria-label="Utiliser ma position GPS">🎯</button>
     <button class="btn ghost" id="placeCancel">Annuler</button>
     <button class="btn" id="placeOk">Valider ici</button>
   </div>
@@ -148,7 +151,7 @@
 
 <!-- ============ FICHE (bottom sheet) ============ -->
 <div id="sheet" class="sheet hidden">
-  <div class="sheet-handle" id="sheetClose">✕</div>
+  <button class="sheet-handle" id="sheetClose" aria-label="Fermer la fiche" style="background:none;border:0;width:100%">✕</button>
   <div id="sheetContent"></div>
 </div>
 
@@ -196,7 +199,7 @@
     <div class="row" style="align-items:center">
       <span class="small" id="helpPosState" style="flex:1">📍 Position d'alerte : <b>non définie</b></span>
       <button class="btn ghost small-btn" id="helpPosMap">🗺️ Sur la carte</button>
-      <button class="btn ghost small-btn" id="helpPosGps" title="Utiliser le GPS">🎯</button>
+      <button class="btn ghost small-btn" id="helpPosGps" title="Utiliser le GPS" aria-label="Position d'alerte par GPS">🎯</button>
     </div>
     <input id="helpEmail" type="email" placeholder="E-mail pour recevoir les alertes *" autocomplete="email">
     <label class="switch"><input type="checkbox" id="helpVisible"> 🟢 Être <b>visible comme dépanneur</b> sur la carte
@@ -290,7 +293,7 @@
   <div class="ob-card page">
     <div class="page-head">
       <h2>👤 Mon espace</h2>
-      <button class="page-close" id="pfCancel">✕</button>
+      <button class="page-close" id="pfCancel" aria-label="Fermer Mon espace">✕</button>
     </div>
 
     <p class="small muted">Identité liée à ce navigateur — visible sur vos fiches et vos «&nbsp;j'arrive&nbsp;».</p>
@@ -309,6 +312,7 @@
     <a class="prow" href="/affiche.html" target="_blank"><span>🖨️ Affiche &amp; QR code à imprimer</span><span class="chev">›</span></a>
     <a class="prow" href="/legal.html" target="_blank"><span>📄 Mentions légales &amp; données</span><span class="chev">›</span></a>
     <button class="prow" id="pfShareApp"><span>📤 Faire connaître Entraide Feu</span><span class="chev">›</span></button>
+    <button class="prow" id="pfPin"><span>📌 Épingler sur l'écran d'accueil</span><span class="chev">›</span></button>
     <button class="prow" id="pfRecover"><span>🔑 Récupérer une session (j'ai un code)</span><span class="chev">›</span></button>
     <button class="prow" id="pfNewCode"><span>♻️ Régénérer mon code de session</span><span class="chev">›</span></button>
     <button class="prow" id="pfReplay"><span>🔄 Revoir l'introduction</span><span class="chev">›</span></button>

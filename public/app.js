@@ -22,6 +22,8 @@ let openPingId = null;
 let pollDelay = 20000, pollTimer = null;
 let knownIds = null;
 let demoMode = false;
+let installPrompt = null; // proposition d'épinglage capturée (Chrome/Android)
+window.addEventListener('beforeinstallprompt', e => { e.preventDefault(); installPrompt = e; });
 
 /* ---------- utilitaires ---------- */
 function toast(msg, err) {
@@ -29,7 +31,7 @@ function toast(msg, err) {
   d.className = 'toast' + (err ? ' err' : '');
   d.textContent = msg;
   $('#toasts').appendChild(d);
-  setTimeout(() => d.remove(), 5000);
+  setTimeout(() => d.remove(), err ? 9000 : 5000); // les erreurs laissent le temps de lire la marche à suivre
 }
 function timeAgo(ts) {
   const m = Math.floor((Date.now() - new Date(ts).getTime()) / 60000);
@@ -86,16 +88,18 @@ function chipsToggle(container, multi = true) {
 const chipsValues = container => [...container.querySelectorAll('.chip.on')].map(c => c.dataset.v);
 
 /* ---------- carte ---------- */
-// Zone navigable : France métropolitaine élargie. Outil de crise territorial —
-// aucun cas d'usage planétaire, et ça règle par construction la disparition des
-// marqueurs sur les copies du monde. À adapter si fork ailleurs (cf. ARCHITECTURE).
-const MAP_BOUNDS = [[40.5, -6.5], [51.8, 10.5]]; // [sud-ouest], [nord-est]
-function initMap() {
+// La région (vue initiale + zone navigable) vient du serveur (/api/config,
+// pilotée par REGION_CENTER / REGION_BOUNDS dans .env) : un fork ne touche
+// qu'à sa configuration. Le bornage règle aussi, par construction, la
+// disparition des marqueurs sur les copies du monde.
+function initMap(region) {
+  const [s, w, n, e] = region.bounds;
+  const [lat, lng, zoom] = region.center;
   map = L.map('map', {
     zoomControl: false, attributionControl: false,
-    minZoom: 5, maxBounds: MAP_BOUNDS, maxBoundsViscosity: .8,
+    minZoom: 5, maxBounds: [[s, w], [n, e]], maxBoundsViscosity: .8,
     worldCopyJump: true, // ceinture de sécurité si un bord était atteint quand même
-  }).setView([44.8, -0.9], 9); // Gironde
+  }).setView([lat, lng], zoom);
   L.control.attribution({ position: 'topright', prefix: false }).addTo(map);
   L.tileLayer('https://tile.openstreetmap.org/{z}/{x}/{y}.png', {
     maxZoom: 19, attribution: '© OpenStreetMap',
@@ -179,9 +183,12 @@ function render() {
     const meta = TYPE_META[p.type];
     const cnt = p.isFull ? '<span class="cnt full">⛔</span>'
       : p.arrivals.length ? `<span class="cnt">${p.arrivals.length}</span>` : '';
-    const icon = L.divIcon({ className: '', html: `<div class="pin${p.isFull ? ' closedk' : ''}">${meta.emoji}${cnt}</div>`, iconSize: [30, 30], iconAnchor: [15, 15] });
+    // vieillissement visible sur la carte : un SOS de 20 h ne doit pas ressembler à un de 5 min
+    const ageH = (Date.now() - new Date(p.at).getTime()) / 3600000;
+    const ageStyle = p.isFull ? '' : ageH > 12 ? 'opacity:.55;filter:saturate(.5)' : ageH > 6 ? 'opacity:.8' : '';
+    const icon = L.divIcon({ className: '', html: `<div class="pin${p.isFull ? ' closedk' : ''}" style="${ageStyle}">${meta.emoji}${cnt}</div>`, iconSize: [30, 30], iconAnchor: [15, 15] });
     if (markers.has(p.id)) {
-      markers.get(p.id).setIcon(icon).setLatLng([p.lat, p.lng]);
+      markers.get(p.id).setIcon(icon).setLatLng([p.lat, p.lng]); // icône re-créée : le vieillissement suit
     } else {
       const m = L.marker([p.lat, p.lng], { icon }).on('click', () => openSheet(p.id));
       cluster.addLayer(m);
@@ -302,11 +309,14 @@ function exitDemo() {
   }
 }
 
+let lastSync = null;
 async function poll() {
   if (demoMode) return; // en démo, on n'écrase pas les exemples
   clearTimeout(pollTimer);
   try {
     const data = await api('/api/state');
+    lastSync = Date.now();
+    $('#offlineBar').classList.add('hidden');
     const prevIds = knownIds;
     state = data;
     knownIds = new Set(data.pings.map(p => p.id));
@@ -319,6 +329,11 @@ async function poll() {
     render();
   } catch (e) {
     pollDelay = Math.min(pollDelay * 2, 180000); // backoff : on ne matraque pas un serveur qui souffre
+    // en crise, une donnée périmée doit SE VOIR : bandeau avec l'heure des données
+    if (lastSync) {
+      $('#offlineSince').textContent = new Date(lastSync).toLocaleTimeString('fr-FR', { hour: '2-digit', minute: '2-digit' });
+      $('#offlineBar').classList.remove('hidden');
+    }
   }
   pollTimer = setTimeout(poll, pollDelay);
 }
@@ -943,6 +958,13 @@ function setupProfile() {
   };
   $('#pfHelp').onclick = () => { $('#profileModal').classList.add('hidden'); $('#btnHelp').click(); };
   $('#pfShareApp').onclick = () => { $('#profileModal').classList.add('hidden'); openShare('app', null, location.origin); };
+  $('#pfPin').onclick = () => {
+    if (installPrompt) { installPrompt.prompt(); installPrompt = null; return; }
+    const ios = /iP(hone|ad|od)/.test(navigator.userAgent);
+    alert(ios
+      ? 'Sur iPhone/iPad : bouton Partager (carré avec flèche) → « Sur l\'écran d\'accueil ».\n\nLa carte s\'ouvrira alors comme une app — c\'est toujours ce site web, rien à installer.'
+      : 'Dans le menu du navigateur (⋮) : « Ajouter à l\'écran d\'accueil » ou « Installer l\'application ».\n\nC\'est toujours ce site web, épinglé pour y accéder en un tap.');
+  };
   $('#shareClose').onclick = () => $('#shareModal').classList.add('hidden');
   $('#pfRecover').onclick = async () => {
     const code = prompt('Code de session (FEU-XXXX-XXXX) — la session actuelle de cet appareil sera remplacée :');
@@ -1135,7 +1157,8 @@ function setupUI() {
 
 async function boot() {
   if ('serviceWorker' in navigator) navigator.serviceWorker.register('/sw.js').catch(() => {});
-  initMap();
+  const cfg = await api('/api/config').catch(() => ({ region: { center: [44.8, -0.9, 9], bounds: [40.5, -6.5, 51.8, 10.5] } }));
+  initMap(cfg.region);
   setupUI();
   await poll();
   const m = location.hash.match(/^#p=([A-Za-z0-9]+)/);

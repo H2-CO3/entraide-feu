@@ -136,6 +136,16 @@ input[type=text], input[type=tel], input[type=email], input[type=number], textar
 .arrivals { margin: .5rem 0; font-size: .92rem; }
 .arrivals li { margin: .2rem 0 .2rem 1.2rem; }
 
+/* ---- hors-ligne ---- */
+#offlineBar {
+  position: absolute; top: 5.6rem; left: .8rem; right: .8rem; z-index: 750;
+  background: #6e2929; color: #ffd7d7; border-radius: 12px; padding: .6rem .9rem;
+  font-size: .9rem; box-shadow: 0 4px 16px rgba(0,0,0,.5);
+}
+
+/* focus clavier visible partout */
+:focus-visible { outline: 2px solid #7ab8ff; outline-offset: 2px; }
+
 /* ---- bannières ---- */
 .banner {
   position: absolute; top: 5.6rem; left: .8rem; right: .8rem; z-index: 700;

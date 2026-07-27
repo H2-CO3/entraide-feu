@@ -33,6 +33,20 @@ const CONTACT = process.env.CONTACT_EMAIL || 'contact@example.org';
 webpush.setVapidDetails('mailto:' + CONTACT, vapid.publicKey, vapid.privateKey);
 
 const BASE_URL = (process.env.BASE_URL || 'http://localhost:3000').replace(/\/$/, '');
+
+// ---------- configuration territoriale (un fork = ce bloc de .env, rien d'autre) ----------
+const parseNums = (s, n, def) => {
+  const v = String(s || '').split(',').map(Number);
+  return v.length === n && v.every(isFinite) ? v : def;
+};
+const REGION = {
+  // vue initiale de la carte : lat, lng, zoom
+  center: parseNums(process.env.REGION_CENTER, 3, [44.8, -0.9, 9]),
+  // zone navigable : south, west, north, east
+  bounds: parseNums(process.env.REGION_BOUNDS, 4, [40.5, -6.5, 51.8, 10.5]),
+};
+// bbox des détections satellites et du géocodage : west, south, east, north
+const GEO_BBOX = parseNums(process.env.GEO_BBOX, 4, [-2.0, 43.3, 1.5, 46.2]);
 const TTL_H = 24;    // durée de vie publique d'un ping
 const PURGE_H = 72;  // suppression définitive (fenêtre de re-déclaration)
 const REPORT_THRESHOLD = 3;
@@ -250,7 +264,7 @@ app.get('/fires/wms', async (req, res) => {
 // 5 000 / 10 min — on en consomme 3). Chaque point garde son heure d'acquisition,
 // sa confiance et sa puissance : la carte peut dire QUAND le feu a été vu.
 const FIRMS_KEY = process.env.FIRMS_MAP_KEY || '';
-const FIRMS_BBOX = '-2.0,43.3,1.5,46.2'; // west,south,east,north — même zone que l'import (à adapter si fork)
+const FIRMS_BBOX = GEO_BBOX.join(','); // west,south,east,north — pilotée par GEO_BBOX (.env)
 const FIRMS_SOURCES = ['VIIRS_SNPP_NRT', 'VIIRS_NOAA20_NRT', 'VIIRS_NOAA21_NRT'];
 let firePoints = [], fireUpdatedAt = null;
 
@@ -363,6 +377,12 @@ app.post('/api/session/recover', limited('recover', 10), async (req, res) => {
   if (!found.length) return res.status(404).json({ error: 'Code inconnu.' });
   setFidCookie(req, res, fid);
   res.json({ ok: true, name: found[0].name });
+});
+
+// Configuration territoriale pour le client (vue initiale, bornes de la carte)
+app.get('/api/config', (req, res) => {
+  res.set('Cache-Control', 'public, max-age=3600');
+  res.json({ region: REGION });
 });
 
 // Profil d'onboarding (facultatif, sur l'honneur) — mise à jour partielle :

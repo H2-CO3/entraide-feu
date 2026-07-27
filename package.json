@@ -8,7 +8,9 @@
     "vapid": "web-push generate-vapid-keys",
     "purge": "node scripts/purge.js",
     "purge:all": "node scripts/purge.js --all",
-    "purge:full": "node scripts/purge.js --full"
+    "purge:full": "node scripts/purge.js --full",
+    "seed:demo": "node scripts/seed-demo.js",
+    "make:demo": "echo \"curl -s http://localhost:3000/api/state | node scripts/make-demo.js\""
   },
   "engines": {
     "node": ">=18"

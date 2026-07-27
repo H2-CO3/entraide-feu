@@ -1,5 +1,15 @@
 # 🔥 Entraide Feu
 
+> **EN** — Emergency mutual-aid map built during the July 2026 Gironde wildfires
+> (France): residents and responders post geolocated **SOS** (hands/vehicle,
+> supplies, medical) and **shelters/collection points** on a live map. No
+> accounts — an anonymous cookie plus a one-time session code. Everything
+> expires in 24h. Email alerts by category & radius, NASA FIRMS fire layer,
+> consent-based phone exchange, demo mode. One Node process + MySQL: built to
+> be **forked for any territory or any emergency** — see [FORKING.md](FORKING.md).
+
+![Carte en situation](docs/screenshot-carte.png) ![Fiche refuge](docs/screenshot-fiche.png)
+
 Carte d'entraide d'urgence en zone d'incendie : les habitants et les forces opérationnelles émettent
 des **besoins** (bras/véhicule, matériel, médical) et des **offres** (points de collecte, refuges),
 géolocalisés sur une carte publique. Sans compte, sans friction — un cookie technique anonyme suffit.
