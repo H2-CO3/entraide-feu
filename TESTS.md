@@ -40,15 +40,15 @@ démarré, et chaque testeur vide les données du site (ou fenêtre privée neuv
 - [ ] Cookie `fid` HttpOnly posé (DevTools → Application).
 
 ## S2 — Émettre un besoin complet (A)
-1. « Besoin d'aide » → catégorie Matériel, titre, message public,
+1. « Lancer un SOS » → catégorie Matériel, titre, message public,
    **partie privée** (ex : « code portail 1234 »), photo, vocal ≤ 60 s.
-2. Déplacer le pin à la main, valider.
+2. Déplacer la carte sous le repère central, valider.
 3. Noter le **code de clôture** affiché ; activer « me prévenir ».
 
 - [ ] Photo recompressée (< 500 Ko dans l'onglet réseau) et vocal lisibles sur la fiche.
 - [ ] Le pin apparaît chez B/C/D en ≤ 30 s (polling) avec la bonne icône.
 - [ ] La photo ne contient plus de GPS EXIF (vérifier avec un lecteur EXIF).
-- [ ] « Besoin d'aide » devient « 📋 Ma demande (suivi) » chez A.
+- [ ] « Besoin d'aide » devient « 📋 Mon SOS (suivi) » chez A.
 
 ## S3 — Alertes dépanneur (B, puis C hors rayon)
 1. B : « Je dépanne » → cocher Matériel, rayon couvrant le besoin de A, notifications ON.
@@ -80,7 +80,7 @@ démarré, et chaque testeur vide les données du site (ou fenêtre privée neuv
 - [ ] Accord : C voit le numéro + bouton 📞 appeler ; D ne voit rien.
 
 ## S6 — Vie de la fiche (A)
-1. A ajoute une mise à jour (« plus besoin de X »). 2. A clôture depuis « Ma demande ».
+1. A ajoute une mise à jour (« plus besoin de X »). 2. A clôture depuis « Mon SOS ».
 
 - [ ] La mise à jour horodatée apparaît chez tous en ≤ 30 s.
 - [ ] Clôture : la fiche disparaît partout, « ✅ résolus » +1, le bouton A redevient « Besoin d'aide ».
@@ -100,7 +100,7 @@ démarré, et chaque testeur vide les données du site (ou fenêtre privée neuv
 
 - [ ] Badges 🛏️ 4 places / 🐾 sur la fiche ; adresse exacte invisible avant demande.
 - [ ] Complet : pin grisé + ⛔ sur la carte, bandeau COMPLET, bouton demande retiré chez D.
-- [ ] Rouvert : tout revient. Le SOS de C est un besoin normal, suivi via « Ma demande ».
+- [ ] Rouvert : tout revient. Le SOS de C est un besoin normal, suivi via « Mon SOS ».
 - [ ] C garde son bouton « Besoin d'aide » même en étant hébergeur.
 
 ## S9 — Signalement et modération (D auteur ; A, B, C signalent ; Admin)

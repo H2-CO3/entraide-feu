@@ -119,7 +119,7 @@ async function pushTo(hash, payload) {
 async function pushWatchers(ping) {
   const rows = await q('SELECT hash, subscription, cats, lat, lng, radius_km FROM watchers WHERE subscription IS NOT NULL AND hash<>?', [ping.owner_hash]);
   const payload = {
-    title: `${TYPE_LABEL[ping.type]} — ${ping.kind === 'besoin' ? 'nouveau besoin' : 'nouvelle assistance'}`,
+    title: `${TYPE_LABEL[ping.type]} — ${ping.kind === 'besoin' ? 'nouveau SOS' : 'nouveau refuge'}`,
     body: ping.title,
     url: `/#p=${ping.id}`,
   };
@@ -664,8 +664,17 @@ init().then(() => {
     setInterval(refreshFirms, 600000).unref();
   } else console.log('FIRMS_MAP_KEY absente — couche feux en mode raster GIBS');
   const port = Number(process.env.PORT) || 3000;
-  app.listen(port, () => {
-    console.log(`Entraide Feu sur le port ${port}`);
+  // HTTPS local optionnel (dev mobile via mkcert). En prod : variables absentes
+  // → HTTP simple derrière le proxy TLS de l'hébergeur. Même code partout.
+  let server = app;
+  if (process.env.HTTPS_KEY && process.env.HTTPS_CERT) {
+    server = require('https').createServer({
+      key: fs.readFileSync(process.env.HTTPS_KEY),
+      cert: fs.readFileSync(process.env.HTTPS_CERT),
+    }, app);
+  }
+  server.listen(port, () => {
+    console.log(`Entraide Feu sur le port ${port}${server !== app ? ' (HTTPS local)' : ''}`);
     console.log(`Admin : ${BASE_URL}/admin.html?key=${ADMIN_KEY}`);
   });
 }).catch(e => { console.error('Init BDD impossible :', e.message); process.exit(1); });

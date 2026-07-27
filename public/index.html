@@ -4,7 +4,7 @@
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
 <title>Entraide Feu — carte d'entraide d'urgence</title>
-<meta name="description" content="Carte d'entraide en zone de feu : besoins et offres géolocalisés, mise en relation directe.">
+<meta name="description" content="Carte d'entraide en zone de feu : SOS, refuges et collectes géolocalisés, mise en relation directe.">
 <link rel="icon" href="/icon.svg" type="image/svg+xml">
 <link rel="manifest" href="/manifest.webmanifest">
 <meta name="theme-color" content="#1a1d24">
@@ -22,7 +22,7 @@
       <p class="ob-emoji">🔥</p>
       <h1>Entraide Feu</h1>
       <p class="lead">La carte d'entraide de la zone incendiée.<br>
-      Des besoins, des coups de main, en direct.<br>Sans compte, sans inscription.</p>
+      Des SOS, des refuges, des coups de main —<br>en direct. Sans compte, sans inscription.</p>
       <button class="btn big" id="obNext1">Continuer</button>
       <p class="ob-dots">● ○ ○ ○</p>
     </div>
@@ -41,7 +41,7 @@
     <div class="ob-step hidden" id="ob3">
       <p class="ob-emoji">👤</p>
       <h1>Votre prénom</h1>
-      <p class="lead">Il s'affiche sur vos fiches et rassure ceux qui vous répondent.</p>
+      <p class="lead">Il s'affiche sur vos SOS et rassure ceux qui vous répondent.</p>
       <input id="obName" type="text" maxlength="40" placeholder="Prénom ou pseudo *" autocomplete="given-name">
       <p class="muted small">Professionnel&nbsp;? Déclarez-le <b>sur l'honneur</b> (badge «&nbsp;se déclare…&nbsp;») — facultatif :</p>
       <div class="chips" id="obProf">
@@ -56,7 +56,7 @@
       <p class="ob-emoji">🍪</p>
       <h1>Un cookie, c'est tout</h1>
       <p class="lead">Un cookie technique <b>anonyme</b> identifie votre navigateur — jamais votre personne —
-      pour que vous puissiez gérer vos fiches.</p>
+      pour que vous puissiez gérer vos SOS et refuges.</p>
       <p class="small muted">En acceptant, vous engagez votre responsabilité sur la sincérité de vos déclarations.
       Tout expire automatiquement sous 24&nbsp;h. <a href="/legal.html" target="_blank">Mentions légales</a></p>
       <button class="btn big" id="obAccept">J'accepte</button>
@@ -65,7 +65,7 @@
     <div class="ob-step hidden" id="ob5">
       <p class="ob-emoji">🤝</p>
       <h1>On commence&nbsp;?</h1>
-      <button class="btn big need" id="obNeed">🆘 Besoin d'aide</button>
+      <button class="btn big need" id="obNeed">🆘 Lancer un SOS</button>
       <button class="btn big help" id="obHelp">💪 Je dépanne <span class="small">(alertes)</span></button>
       <button class="btn big" id="obRefuge">🏠 Ouvrir un refuge</button>
       <button class="linklike" id="obSkip">Juste voir la carte</button>
@@ -81,7 +81,7 @@
   </div>
   <div class="chips" id="filters">
     <button class="chip on" data-f="all">Tout</button>
-    <button class="chip" data-f="besoin">🆘 Besoins</button>
+    <button class="chip" data-f="besoin">🆘 SOS</button>
     <button class="chip" data-f="offre">🛟 Assistance</button>
     <button class="chip on" id="fireToggle" title="Points chauds satellites NASA">🛰️ Feux</button>
     <button class="chip" id="infoBtn" title="Légende et renseignements officiels">ℹ️ Infos</button>
@@ -98,14 +98,15 @@
 
 <!-- boutons principaux -->
 <div id="mainBtns">
-  <button class="btn need" id="btnNeed">🆘 Besoin d'aide</button>
+  <button class="btn need" id="btnNeed">🆘 Lancer un SOS</button>
   <button class="btn help" id="btnHelp">💪 Je dépanne</button>
 </div>
 
 <!-- barre de placement du pin -->
 <div id="placeBar" class="hidden">
-  <p>📍 Déplacez le repère à l'endroit exact <span id="placeWarn" class="warn-inline hidden"></span></p>
+  <p>🗺️ Déplacez la <b>carte</b> pour amener le repère à l'endroit exact <span id="placeWarn" class="warn-inline hidden"></span></p>
   <div class="row">
+    <button class="btn ghost small-btn" id="placeLocate" title="Utiliser ma position">🎯</button>
     <button class="btn ghost" id="placeCancel">Annuler</button>
     <button class="btn" id="placeOk">Valider ici</button>
   </div>
@@ -149,7 +150,7 @@
 <div id="helpPanel" class="overlay hidden">
   <div class="modal">
     <h2>💪 Je dépanne — mes alertes</h2>
-    <p class="small muted">Recevez une alerte quand un besoin correspondant apparaît dans votre périmètre :</p>
+    <p class="small muted">Recevez une alerte quand un SOS correspondant apparaît dans votre périmètre :</p>
     <div class="chips" id="helpCats">
       <button class="chip" data-v="humain">🙋 Bras / véhicule</button>
       <button class="chip" data-v="materiel">📦 Matériel</button>
@@ -176,7 +177,7 @@
 <!-- ============ APRÈS ÉMISSION ============ -->
 <div id="doneModal" class="overlay hidden">
   <div class="modal">
-    <h2>✅ Fiche publiée</h2>
+    <h2 id="doneTitle">✅ Publié !</h2>
     <p>Code de clôture de secours (notez-le si vous risquez de changer d'appareil)&nbsp;:</p>
     <p class="code" id="doneCode"></p>
     <button class="btn" id="doneNotif">🔔 Me prévenir quand quelqu'un arrive</button>
@@ -191,7 +192,7 @@
     <h2>ℹ️ Légende</h2>
     <p class="statsline muted small"></p>
     <ul class="legend">
-      <li>🙋 📦 ⚕️ — <b>Besoins</b> émis par les habitants et les équipes sur place</li>
+      <li>🙋 📦 ⚕️ — <b>SOS</b> émis par les habitants et les équipes sur place</li>
       <li>📥 🏠 — <b>Assistance</b> : refuges citoyens (places, animaux), collectes</li>
       <li>🏠<span class="muted">grisé</span> ⛔ — Refuge <b>complet</b> (inutile de demander, mais il existe)</li>
       <li><span class="offpin-mini">🏠</span> — <b>Point officiel</b> (préfecture, mairie) : hébergement, collecte, animaux</li>
@@ -203,7 +204,7 @@
         <span style="color:#8a7d72">●</span>&nbsp;plus&nbsp;ancien
         <span class="muted small" id="fireDate"></span></li>
       <li><span class="zone-mini"></span> — Zone de danger / évacuée</li>
-      <li><span class="cluster-mini">5</span> — Plusieurs fiches regroupées : zoomez ou touchez</li>
+      <li><span class="cluster-mini">5</span> — Plusieurs points regroupés : zoomez ou touchez</li>
     </ul>
     <h2>📡 Renseignements officiels</h2>
     <p class="small">

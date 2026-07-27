@@ -124,6 +124,22 @@ input[type=text], input[type=tel], textarea {
 }
 .banner .row { margin-top: .5rem; }
 
+/* ---- repère central de placement ---- */
+#centerPin {
+  position: absolute; left: 50%; top: 50%;
+  transform: translate(-50%, -100%);
+  z-index: 650; font-size: 2.4rem; pointer-events: none;
+  filter: drop-shadow(0 4px 5px rgba(0,0,0,.55));
+  animation: pinbounce .4s;
+}
+#centerPin::after {
+  content: ''; position: absolute; left: 50%; bottom: -4px;
+  transform: translateX(-50%);
+  width: 8px; height: 8px; border-radius: 50%;
+  background: rgba(26,29,36,.85); border: 2px solid #fff;
+}
+@keyframes pinbounce { from { transform: translate(-50%, -140%); } }
+
 /* ---- placement pin ---- */
 #placeBar {
   position: absolute; bottom: calc(env(safe-area-inset-bottom, 0px) + .9rem);

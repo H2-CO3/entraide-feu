@@ -49,14 +49,25 @@ function distKm(a, b, c, d) {
   const h = Math.sin(r(c - a) / 2) ** 2 + Math.cos(r(a)) * Math.cos(r(c)) * Math.sin(r(d - b) / 2) ** 2;
   return 2 * R * Math.asin(Math.sqrt(h));
 }
-// géolocalisation en une promesse, null si refus/échec — jamais bloquant
-function getPosition() {
-  return new Promise(r => navigator.geolocation
-    ? navigator.geolocation.getCurrentPosition(
-        p => r({ lat: p.coords.latitude, lng: p.coords.longitude }),
-        () => r(null), { timeout: 6000, maximumAge: 30000 })
-    : r(null));
+// géolocalisation : version bavarde (dit POURQUOI ça échoue) et raccourci silencieux
+const GEO_MSG = {
+  denied: 'Géolocalisation refusée — autorisez-la dans les réglages du navigateur, ou placez le point à la main',
+  unavailable: 'Position introuvable (GPS coupé ?) — déplacez la carte sous le repère',
+  timeout: 'GPS trop lent — déplacez la carte sous le repère, ou réessayez 🎯',
+  insecure: 'Connexion non sécurisée : le navigateur bloque la géolocalisation',
+  unsupported: 'Géolocalisation non disponible sur ce navigateur',
+};
+function getPositionVerbose() {
+  return new Promise(r => {
+    if (!('geolocation' in navigator)) return r({ error: 'unsupported' });
+    if (!window.isSecureContext) return r({ error: 'insecure' });
+    navigator.geolocation.getCurrentPosition(
+      p => r({ pos: { lat: p.coords.latitude, lng: p.coords.longitude } }),
+      e => r({ error: e.code === 1 ? 'denied' : e.code === 2 ? 'unavailable' : 'timeout' }),
+      { enableHighAccuracy: true, timeout: 10000, maximumAge: 15000 });
+  });
 }
+const getPosition = () => getPositionVerbose().then(r => r.pos || null);
 
 function inDangerZone(lat, lng) {
   if (!state) return null;
@@ -89,6 +100,11 @@ function initMap() {
 
   cluster = L.markerClusterGroup({ maxClusterRadius: 45, showCoverageOnHover: false });
   map.addLayer(cluster);
+
+  // repère central fixe pour le placement (créé une fois, masqué par défaut)
+  const pin = document.createElement('div');
+  pin.id = 'centerPin'; pin.className = 'hidden';
+  map.getContainer().appendChild(pin);
   navigator.geolocation?.getCurrentPosition(p => {
     if (!openPingId) map.setView([p.coords.latitude, p.coords.longitude], 12);
   }, () => {}, { timeout: 5000 });
@@ -142,7 +158,7 @@ function render() {
   if (!state) return;
   // stats
   const s = state.stats;
-  const statsTxt = `${s.besoins} besoins · ${s.collectes} collectes · ${s.refuges} refuges · 🔔 ${s.alerte} en alerte · ✅ ${s.resolved} résolus`;
+  const statsTxt = `${s.besoins} SOS · ${s.collectes} collectes · ${s.refuges} refuges · 🔔 ${s.alerte} en alerte · ✅ ${s.resolved} résolus`;
   document.querySelectorAll('.statsline').forEach(el => el.textContent = statsTxt);
   if (fireMode !== 'firms') { const fd = $('#fireDate'); if (fd && state.fireDate) fd.textContent = '(' + state.fireDate + ')'; }
 
@@ -209,10 +225,10 @@ function renderMainButtons() {
   const helperActive = !!(w && (w.cats || w.subscribed));
   const bNeed = $('#btnNeed'), bHelp = $('#btnHelp');
   if (myNeed) {
-    bNeed.innerHTML = '📋 Ma demande <span class="muted">(suivi)</span>';
+    bNeed.innerHTML = '📋 Mon SOS <span class="muted">(suivi)</span>';
     bNeed.onclick = () => { map.setView([myNeed.lat, myNeed.lng], 14); openSheet(myNeed.id); };
   } else {
-    bNeed.textContent = '🆘 Besoin d\'aide';
+    bNeed.textContent = '🆘 Lancer un SOS';
     bNeed.onclick = () => openEmit('besoin');
   }
   bHelp.classList.toggle('hidden', helperActive);
@@ -241,9 +257,17 @@ async function poll() {
 document.addEventListener('visibilitychange', () => { if (!document.hidden) poll(); });
 
 /* ---------- bannières ---------- */
+let lastBannerKey = null;
 function renderBanners() {
-  // demandes de numéro entrantes
+  // règle d'or anti-perte de saisie : on ne reconstruit jamais une zone
+  // contenant le champ actif, ni une bannière dont le contenu n'a pas changé
+  const active = document.activeElement;
+  if (active && /INPUT|TEXTAREA/.test(active.tagName) &&
+      ($('#contactBanner').contains(active) || $('#redeclare').contains(active))) return;
   const pending = state.contact.incoming.filter(c => c.status === 'pending');
+  const key = `${pending[0]?.id ?? ''}|${pending.length ? '' : state.myExpired[0]?.id ?? ''}`;
+  if (key === lastBannerKey) return;
+  lastBannerKey = key;
   const cb = $('#contactBanner');
   if (pending.length) {
     const c = pending[0];
@@ -268,7 +292,7 @@ function renderBanners() {
   const rd = $('#redeclare');
   if (state.myExpired.length && pending.length === 0) {
     const e0 = state.myExpired[0];
-    rd.innerHTML = `⏳ Votre fiche «&nbsp;${esc(e0.title)}&nbsp;» a expiré (24 h). Toujours d'actualité ?
+    rd.innerHTML = `⏳ Votre ${e0.kind === 'besoin' ? 'SOS' : 'refuge'} «&nbsp;${esc(e0.title)}&nbsp;» a expiré (24 h). Toujours d'actualité ?
       <div class="row"><button class="btn ghost" id="rdNo">Non, oublier</button><button class="btn" id="rdYes">🔄 Re-déclarer</button></div>`;
     rd.classList.remove('hidden');
     $('#rdYes').onclick = () => { rd.classList.add('hidden'); openEmit(e0.kind, e0); };
@@ -284,12 +308,23 @@ function openSheet(id) {
 }
 function closeSheet() { openPingId = null; $('#sheet').classList.add('hidden'); }
 
+let lastSheetSnap = null;
 function renderSheet(id, soft) {
   const p = state.pings.find(x => x.id === id);
   const el = $('#sheetContent');
   if (!p) {
-    if (!soft) { el.innerHTML = '<p class="muted">Cette fiche n’existe plus (clôturée ou expirée).</p>'; }
+    if (!soft) { el.innerHTML = '<p class="muted">Cette publication n’existe plus (clôturée ou expirée).</p>'; lastSheetSnap = null; }
     return;
+  }
+  if (soft) {
+    // jamais de re-rendu pendant une saisie dans la fiche, ni si rien n'a changé
+    const active = document.activeElement;
+    if (active && /INPUT|TEXTAREA/.test(active.tagName) && $('#sheet').contains(active)) return;
+    const snap = JSON.stringify([p, state.contact.outgoing.find(c => c.pingId === id)]);
+    if (snap === lastSheetSnap) return;
+    lastSheetSnap = snap;
+  } else {
+    lastSheetSnap = JSON.stringify([p, state.contact.outgoing.find(c => c.pingId === id)]);
   }
   const meta = TYPE_META[p.type];
   const zone = inDangerZone(p.lat, p.lng);
@@ -298,7 +333,7 @@ function renderSheet(id, soft) {
   const isRefuge = p.type === 'refuge';
   let html = `<h3>${meta.emoji} ${esc(p.title)}</h3>
     ${p.isFull ? '<p class="warn" style="text-align:center"><b>⛔ COMPLET</b> — inutile de demander pour le moment</p>' : ''}
-    <div><span class="badge" style="background:${meta.color}">${p.kind === 'besoin' ? '🆘 Besoin' : '🛟 Assistance'} — ${meta.label}</span>
+    <div><span class="badge" style="background:${meta.color}">${p.kind === 'besoin' ? '🆘 SOS' : '🛟 Assistance'} — ${meta.label}</span>
     ${isRefuge && p.places ? `<span class="badge">🛏️ ${p.places} places</span>` : ''}
     ${isRefuge && p.animals != null ? `<span class="badge">${p.animals ? '🐾 animaux acceptés' : '🚫 pas d’animaux'}</span>` : ''}
     <span class="badge">${timeAgo(p.at)}</span>
@@ -311,7 +346,7 @@ function renderSheet(id, soft) {
   if (p.privateMessage) {
     html += `<div class="warn" style="border-color:#3a5a7a;background:#20303a">🔒 <b>Détails réservés :</b><br>${esc(p.privateMessage)}</div>`;
   } else if (p.hasPrivate) {
-    html += `<p class="muted small">🔒 Cette fiche contient des détails privés (adresse exacte, contact…) visibles après avoir cliqué «&nbsp;J'arrive&nbsp;».</p>`;
+    html += `<p class="muted small">🔒 ${isRefuge ? 'Ce refuge' : 'Ce SOS'} contient des détails privés (adresse exacte, contact…) visibles après avoir cliqué «&nbsp;${isRefuge ? 'Demander à rejoindre' : 'J\'arrive'}&nbsp;».</p>`;
   }
   if (p.photo) html += `<img src="/uploads/${esc(p.photo)}" alt="photo" loading="lazy">`;
   if (p.audio) html += `<audio controls preload="none" src="/uploads/${esc(p.audio)}"></audio>`;
@@ -351,8 +386,8 @@ function renderSheet(id, soft) {
       try { await api(`/api/pings/${p.id}/update`, { json: { text: t } }); toast('Mise à jour publiée'); poll(); } catch (e) { toast(e.message, true); }
     };
     $('#fClose').onclick = async () => {
-      if (!confirm('Clôturer cette fiche ? Elle disparaîtra de la carte.')) return;
-      try { await api(`/api/pings/${p.id}/close`, { json: {} }); toast('Fiche clôturée ✅'); closeSheet(); poll(); } catch (e) { toast(e.message, true); }
+      if (!confirm(`Clôturer ${isRefuge ? 'ce refuge' : 'ce SOS'} ? Il disparaîtra de la carte.`)) return;
+      try { await api(`/api/pings/${p.id}/close`, { json: {} }); toast(`${isRefuge ? 'Refuge' : 'SOS'} clôturé ✅`); closeSheet(); poll(); } catch (e) { toast(e.message, true); }
     };
   } else if (p.iArrive) {
     const me = p.arrivals.find(a => a.self);
@@ -362,9 +397,9 @@ function renderSheet(id, soft) {
       <div class="row"><button class="btn ghost" id="fCancelArr">${isRefuge ? '🚫 Annuler ma demande' : '🚫 Je ne peux plus venir'}</button></div>
       <div class="row"><button class="btn ghost" id="fShare">📤 Partager</button><button class="btn ghost" id="fReport">⚠️ Signaler</button></div>`;
     $('#fRefreshPos').onclick = async () => {
-      const pos = await getPosition();
-      if (!pos) return toast('Position GPS indisponible', true);
-      try { await api(`/api/pings/${p.id}/position`, { json: pos }); toast('Position mise à jour 📍'); poll(); } catch (e) { toast(e.message, true); }
+      const r = await getPositionVerbose();
+      if (!r.pos) return toast(GEO_MSG[r.error] || GEO_MSG.unavailable, true);
+      try { await api(`/api/pings/${p.id}/position`, { json: r.pos }); toast('Position mise à jour 📍'); poll(); } catch (e) { toast(e.message, true); }
     };
     $('#fCancelArr').onclick = async () => {
       try { await api(`/api/pings/${p.id}/arrive`, { json: { cancel: true } }); toast('Prise en charge annulée'); poll(); } catch (e) { toast(e.message, true); }
@@ -390,7 +425,7 @@ function renderSheet(id, soft) {
         <button class="btn ghost" id="fShare">📤 Partager</button>
         <button class="btn ghost" id="fReport">⚠️</button>
       </div>
-      <button class="linklike" id="fCodeLink">C'est ma fiche mais j'ai changé d'appareil (code de clôture)</button>
+      <button class="linklike" id="fCodeLink">C'est ${isRefuge ? 'mon refuge' : 'mon SOS'} mais j'ai changé d'appareil (code de clôture)</button>
       <div id="fCodeForm" class="hidden">
         <div class="row">
           <input type="text" id="fCode" inputmode="numeric" maxlength="4" placeholder="Code à 4 chiffres">
@@ -412,7 +447,7 @@ function renderSheet(id, soft) {
     $('#fCodeGo').onclick = async () => {
       const code = $('#fCode').value.trim();
       if (!/^\d{4}$/.test(code)) return toast('Le code fait 4 chiffres', true);
-      try { await api(`/api/pings/${p.id}/close`, { json: { code } }); toast('Fiche clôturée ✅'); closeSheet(); poll(); }
+      try { await api(`/api/pings/${p.id}/close`, { json: { code } }); toast('Clôturé ✅'); closeSheet(); poll(); }
       catch (e) { toast('Code incorrect', true); }
     };
   }
@@ -420,7 +455,7 @@ function renderSheet(id, soft) {
   if (shareBtn) shareBtn.onclick = () => sharePing(p);
   const repBtn = $('#fReport');
   if (repBtn) repBtn.onclick = async () => {
-    if (!confirm('Signaler cette fiche comme abusive ou fausse ?')) return;
+    if (!confirm('Signaler cette publication comme abusive ou fausse ?')) return;
     try { await api(`/api/pings/${p.id}/report`, { method: 'POST', json: {} }); toast('Signalement enregistré'); } catch (e) { toast(e.message, true); }
   };
 }
@@ -435,7 +470,7 @@ function sharePing(p) {
 function openEmit(kind, prefill) {
   photoBlob = null; recBlob = null; $('#emitAttach').textContent = '';
   const refuge = kind === 'offre'; // l'offre citoyenne = ouvrir un refuge (les collectes sont officielles)
-  $('#emitTitle').textContent = refuge ? '🏠 Ouvrir un refuge' : '🆘 Émettre un besoin';
+  $('#emitTitle').textContent = refuge ? '🏠 Ouvrir un refuge' : '🆘 Lancer un SOS';
   const types = refuge ? ['refuge'] : ['humain', 'materiel', 'medical'];
   $('#emitTypes').innerHTML = types.map(t => `<button class="chip" data-v="${t}">${TYPE_META[t].emoji} ${TYPE_META[t].label}</button>`).join('');
   chipsToggle($('#emitTypes'), false);
@@ -518,42 +553,42 @@ function setupEmit() {
   };
 }
 
+/* Placement façon VTC : le repère est FIXE au centre de l'écran, on déplace la
+   carte dessous — précis au doigt, pas de conflit drag/pan, le pin jamais caché. */
 function startPlacing(draft, lat, lng) {
-  const c = map.getCenter();
-  const pos = [lat ?? c.lat, lng ?? c.lng];
-  const meta = TYPE_META[draft.type];
-  const marker = L.marker(pos, {
-    draggable: true,
-    icon: L.divIcon({ className: '', html: `<div class="pin">${meta.emoji}</div>`, iconSize: [30, 30], iconAnchor: [15, 15] }),
-  }).addTo(map);
-  map.setView(pos, Math.max(map.getZoom(), 13));
-  placing = { draft, marker };
+  placing = { draft };
+  const pin = $('#centerPin');
+  pin.textContent = TYPE_META[draft.type].emoji;
+  pin.classList.remove('hidden');
   $('#mainBtns').classList.add('hidden');
   $('#placeBar').classList.remove('hidden');
-  const checkZone = () => {
-    const ll = marker.getLatLng();
-    const z = inDangerZone(ll.lat, ll.lng);
-    const w = $('#placeWarn');
-    if (z) { w.textContent = `⚠️ zone « ${z.label} » — placez le point de rencontre en retrait !`; w.classList.remove('hidden'); }
-    else w.classList.add('hidden');
-  };
-  marker.on('dragend', checkZone); checkZone();
-  if (lat == null && navigator.geolocation) {
-    navigator.geolocation.getCurrentPosition(p => {
-      marker.setLatLng([p.coords.latitude, p.coords.longitude]);
-      map.setView([p.coords.latitude, p.coords.longitude], 14);
-      checkZone();
-    }, () => {}, { timeout: 4000 });
-  }
+  if (lat != null) map.setView([lat, lng], Math.max(map.getZoom(), 14));
+  else locateForPlacing(false); // tentative silencieuse, message clair si échec
+  map.on('move', placeMoveCheck);
+  placeMoveCheck();
+}
+function placeMoveCheck() {
+  const c = map.getCenter();
+  const z = inDangerZone(c.lat, c.lng);
+  const w = $('#placeWarn');
+  if (z) { w.textContent = `⚠️ zone « ${z.label} » — placez le point de rencontre en retrait !`; w.classList.remove('hidden'); }
+  else w.classList.add('hidden');
+}
+async function locateForPlacing(manual) {
+  const r = await getPositionVerbose();
+  if (r.pos) { map.setView([r.pos.lat, r.pos.lng], Math.max(map.getZoom(), 15)); if (manual) toast('Repère sur votre position 🎯'); }
+  else toast(GEO_MSG[r.error] || GEO_MSG.unavailable, true);
 }
 function stopPlacing() {
-  placing?.marker.remove(); placing = null;
+  placing = null;
+  map.off('move', placeMoveCheck);
+  $('#centerPin').classList.add('hidden');
   $('#placeBar').classList.add('hidden');
   $('#mainBtns').classList.remove('hidden');
 }
 
 async function submitPing() {
-  const ll = placing.marker.getLatLng();
+  const ll = map.getCenter(); // le repère est au centre de la carte
   const d = placing.draft;
   const fd = new FormData();
   fd.append('kind', d.kind); fd.append('type', d.type);
@@ -568,6 +603,7 @@ async function submitPing() {
   try {
     const r = await api('/api/pings', { method: 'POST', body: fd });
     stopPlacing();
+    $('#doneTitle').textContent = d.kind === 'besoin' ? '✅ SOS publié' : '✅ Refuge publié';
     $('#doneCode').textContent = r.closeCode;
     $('#doneModal').classList.remove('hidden');
     $('#doneShare').onclick = () => sharePing({ id: r.id, title: d.title });
@@ -724,6 +760,7 @@ function setupUI() {
   $('#infoClose').onclick = () => $('#infoModal').classList.add('hidden');
   $('#sheetClose').onclick = closeSheet;
   $('#placeCancel').onclick = stopPlacing;
+  $('#placeLocate').onclick = () => locateForPlacing(true);
   $('#placeOk').onclick = submitPing;
   $('#doneClose').onclick = () => $('#doneModal').classList.add('hidden');
   $('#doneNotif').onclick = async () => {
