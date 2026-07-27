@@ -124,8 +124,9 @@
 
 <!-- boutons principaux -->
 <div id="mainBtns">
-  <button class="btn need" id="btnNeed">🆘 Lancer un SOS</button>
-  <button class="btn help" id="btnHelp">💪 Je dépanne</button>
+  <button class="btn need" id="btnNeed">🆘 SOS</button>
+  <button class="btn help" id="btnHelp">💪 Dépanner</button>
+  <button class="btn refuge" id="btnRefuge">🏠 Refuge</button>
 </div>
 
 <!-- barre de placement du pin -->
@@ -185,7 +186,14 @@
     <label class="rangeLabel">Rayon d'alerte : <b id="helpRadiusVal">20 km</b>
       <input type="range" id="helpRadius" min="2" max="100" value="20">
     </label>
+    <div class="row" style="align-items:center">
+      <span class="small" id="helpPosState" style="flex:1">📍 Position d'alerte : <b>non définie</b></span>
+      <button class="btn ghost small-btn" id="helpPosMap">🗺️ Sur la carte</button>
+      <button class="btn ghost small-btn" id="helpPosGps" title="Utiliser le GPS">🎯</button>
+    </div>
     <input id="helpEmail" type="email" placeholder="E-mail pour recevoir les alertes *" autocomplete="email">
+    <label class="switch"><input type="checkbox" id="helpVisible"> 🟢 Être <b>visible comme dépanneur</b> sur la carte
+      <span class="muted small">(prénom, catégories, position floutée à ~500&nbsp;m — les gens pourront demander votre numéro)</span></label>
     <p class="small" id="notifStatus" style="white-space:pre-line"></p>
     <p class="small muted">E-mail et position ne sont jamais affichés publiquement — ils ne servent qu'à vous alerter.
     Votre position n'est partagée qu'avec un émetteur précis, quand vous cliquez «&nbsp;j'arrive&nbsp;».</p>
@@ -242,6 +250,7 @@
       <li>🏠<span class="muted">grisé</span> ⛔ — Refuge <b>complet</b> (inutile de demander, mais il existe)</li>
       <li><span class="offpin-mini">🏠</span> — <b>Point officiel</b> (préfecture, mairie) : hébergement, collecte, animaux</li>
       <li>🚗 — Dépanneur en route vers l'une de <b>vos</b> fiches (visible de vous seul)</li>
+      <li><span class="helper-pin" style="width:24px;height:24px;font-size:.8rem;display:inline-flex">💪</span> — Dépanneur volontairement visible : touchez pour voir sa fiche et demander son numéro</li>
       <li><span class="fire-mini"></span> — Détections satellites NASA sur 48 h, touchez un point pour l'heure exacte :
         <span style="color:#ff2d20">●</span>&nbsp;&lt;&nbsp;6&nbsp;h&nbsp;
         <span style="color:#ff8c00">●</span>&nbsp;&lt;&nbsp;12&nbsp;h&nbsp;
@@ -296,6 +305,8 @@
     <button class="prow" id="pfRecover"><span>🔑 Récupérer une session (j'ai un code)</span><span class="chev">›</span></button>
     <button class="prow" id="pfNewCode"><span>♻️ Régénérer mon code de session</span><span class="chev">›</span></button>
     <button class="prow" id="pfReplay"><span>🔄 Revoir l'introduction</span><span class="chev">›</span></button>
+
+    <div id="pfContacts"></div>
 
     <div class="sep"></div>
     <button class="prow prow-danger" id="pfLogout"><span>🚪 Se déconnecter de cet appareil</span><span class="chev">›</span></button>

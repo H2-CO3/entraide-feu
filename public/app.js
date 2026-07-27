@@ -13,7 +13,7 @@ const TYPE_META = {
 const PROF_LABEL = { pompier: 'se déclare pompier 🚒', policier: 'se déclare policier 👮', soignant: 'se déclare soignant ⚕️' };
 
 let map, state = null, filter = 'all';
-let markers = new Map(), carLayers = [], zoneLayers = [], officialLayers = [], cluster = null;
+let markers = new Map(), carLayers = [], zoneLayers = [], officialLayers = [], helperLayers = [], cluster = null;
 let fireLayers = [], fireOn = true, fireGroup = null, fireMode = null, fireTimer = null;
 let placing = null;      // { draft, marker } pendant le placement
 let recBlob = null, recMime = null, mediaRec = null;
@@ -201,6 +201,24 @@ function render() {
     }
   }
 
+  // dépanneurs visibles (opt-in, position floutée ~500 m) — sous Tout et Assistance
+  helperLayers.forEach(l => l.remove());
+  helperLayers = [];
+  if (filter !== 'besoin') {
+    for (const h of state.helpers) {
+      const cats = (h.cats || '').split(',').filter(Boolean).map(c => `${TYPE_META[c]?.emoji || ''} ${TYPE_META[c]?.label || c}`).join(' · ');
+      const m = L.marker([h.lat, h.lng], {
+        icon: L.divIcon({ className: '', html: '<div class="helper-pin">💪</div>', iconSize: [32, 32], iconAnchor: [16, 16] }),
+      }).addTo(map).bindPopup(
+        `💪 <b>${esc(h.name || 'Dépanneur')}</b>${h.prof ? ' <span class="badge prof">' + PROF_LABEL[h.prof] + '</span>' : ''}<br>` +
+        `${cats ? 'Propose : ' + cats + '<br>' : ''}` +
+        `<span class="muted small">position approximative (~500 m) · actif ${timeAgo(h.at)}</span><br>` +
+        (h.self ? '<span class="muted small">C\'est vous — réglages via 👤</span>'
+          : `<button class="btn small-btn helperAsk" data-wid="${esc(h.wid)}" style="margin-top:.4rem">📞 Demander son numéro</button>`));
+      helperLayers.push(m);
+    }
+  }
+
   // points officiels (préfecture / mairies) — non clusterisés, toujours visibles
   const O_EMOJI = { refuge: '🏠', collecte: '📥', info: 'ℹ️' };
   officialLayers.forEach(l => l.remove());
@@ -230,15 +248,24 @@ function render() {
    - aucun choix → les deux boutons */
 function renderMainButtons() {
   const myNeed = state.pings.find(p => p.mine && p.kind === 'besoin');
+  const myRefuge = state.pings.find(p => p.mine && p.type === 'refuge');
   const w = state.me?.watch;
   const helperActive = !!(w && (w.cats || w.subscribed));
-  const bNeed = $('#btnNeed'), bHelp = $('#btnHelp');
+  const bNeed = $('#btnNeed'), bHelp = $('#btnHelp'), bRefuge = $('#btnRefuge');
   if (myNeed) {
-    bNeed.innerHTML = '📋 Mon SOS <span class="muted">(suivi)</span>';
+    bNeed.textContent = '📋 Mon SOS';
     bNeed.onclick = () => { map.setView([myNeed.lat, myNeed.lng], 14); openSheet(myNeed.id); };
   } else {
-    bNeed.textContent = '🆘 Lancer un SOS';
+    bNeed.textContent = '🆘 SOS';
     bNeed.onclick = () => openEmit('besoin');
+  }
+  if (myRefuge) {
+    const pending = myRefuge.arrivals.filter(a => a.joinStatus === 'pending').length;
+    bRefuge.textContent = `🏠 Mon refuge${pending ? ' (' + pending + ')' : ''}`;
+    bRefuge.onclick = () => { map.setView([myRefuge.lat, myRefuge.lng], 14); openSheet(myRefuge.id); };
+  } else {
+    bRefuge.textContent = '🏠 Refuge';
+    bRefuge.onclick = () => openEmit('offre');
   }
   bHelp.classList.toggle('hidden', helperActive);
 }
@@ -281,7 +308,7 @@ function renderBanners() {
   if (pending.length) {
     const c = pending[0];
     cb.innerHTML = `📞 <b>${esc(c.name || 'Quelqu’un')}</b>${c.prof ? ' <span class="badge prof">' + PROF_LABEL[c.prof] + '</span>' : ''}${c.fromOwner ? ' (émetteur)' : ''}
-      demande votre numéro pour «&nbsp;${esc(c.pingTitle)}&nbsp;»
+      ${c.pingTitle ? `demande votre numéro pour «&nbsp;${esc(c.pingTitle)}&nbsp;»` : 'souhaite entrer en contact avec vous (dépanneur visible sur la carte)'}
       <input type="tel" id="cbPhone" placeholder="Votre numéro" autocomplete="tel">
       <input type="text" id="cbMsg" maxlength="200" placeholder="Petit message (facultatif, avec ou sans numéro)">
       <div class="row">
@@ -691,6 +718,37 @@ function stopPlacing() {
   $('#mainBtns').classList.remove('hidden');
 }
 
+/* Position d'alerte du dépanneur : même geste que le placement d'un SOS
+   (pin central), plus de repli silencieux sur le centre de la carte */
+let watchPos = null;
+function startWatchPlacing() {
+  $('#helpPanel').classList.add('hidden');
+  placing = { watch: true };
+  const pin = $('#centerPin');
+  pin.textContent = '📍';
+  pin.classList.remove('hidden');
+  $('#mainBtns').classList.add('hidden');
+  $('#placeBar').classList.remove('hidden');
+  const w = state?.me?.watch;
+  if (watchPos) map.setView([watchPos.lat, watchPos.lng], Math.max(map.getZoom(), 12));
+  else if (w?.lat != null) map.setView([+w.lat, +w.lng], Math.max(map.getZoom(), 12));
+  map.on('move', placeMoveCheck);
+  placeMoveCheck();
+}
+function finishWatchPlacing() {
+  const c = map.getCenter();
+  watchPos = { lat: c.lat, lng: c.lng };
+  stopPlacing();
+  updateWatchPosState();
+  $('#helpPanel').classList.remove('hidden'); // le panneau revient, saisies intactes
+}
+function updateWatchPosState() {
+  const has = watchPos || state?.me?.watch?.lat != null;
+  $('#helpPosState').innerHTML = has
+    ? '📍 Position d\'alerte : <b style="color:#7ddba3">définie ✓</b>'
+    : '📍 Position d\'alerte : <b>non définie</b>';
+}
+
 async function submitPing() {
   const ll = map.getCenter(); // le repère est au centre de la carte
   const d = placing.draft;
@@ -769,9 +827,17 @@ function setupHelp() {
       $('#helpRadius').value = w.radius_km; $('#helpRadiusVal').textContent = w.radius_km + ' km';
     }
     $('#helpEmail').value = state?.me?.email || '';
+    $('#helpVisible').checked = !!w?.visible;
     $('#helpIosHint').hidden = true;
     $('#notifStatus').textContent = notifDiagnostic();
+    updateWatchPosState();
     panel.classList.remove('hidden');
+  };
+  $('#helpPosMap').onclick = startWatchPlacing;
+  $('#helpPosGps').onclick = async () => {
+    const r = await getPositionVerbose();
+    if (r.pos) { watchPos = r.pos; updateWatchPosState(); toast('Position d\'alerte définie 🎯'); }
+    else toast(GEO_MSG[r.error] || GEO_MSG.unavailable, true);
   };
   $('#helpCancel').onclick = () => panel.classList.add('hidden');
   $('#helpOffer').onclick = () => { panel.classList.add('hidden'); openEmit('offre'); };
@@ -789,16 +855,15 @@ function setupHelp() {
     const email = $('#helpEmail').value.trim();
     if (!email) return toast('Un e-mail est nécessaire pour recevoir les alertes', true);
     try { await api('/api/onboard', { json: { email } }); } catch (e) { return toast(e.message, true); }
+    // position : choix explicite (carte ou 🎯) — plus jamais de centre par défaut
+    const w = state?.me?.watch;
+    const pos = watchPos || (w?.lat != null ? { lat: +w.lat, lng: +w.lng } : null);
+    if (!pos) return toast('📍 Définissez votre position d\'alerte (🗺️ Sur la carte ou 🎯)', true);
     // push navigateur tenté en bonus, jamais bloquant ni bavard
     const sub = await subscribePush().catch(() => null);
-    // la position ne sert qu'à filtrer les alertes dans le rayon choisi
-    let pos = { lat: state?.me?.watch?.lat, lng: state?.me?.watch?.lng };
-    const got = await getPosition();
-    if (got) pos = got;
-    else if (pos.lat == null) { const c = map.getCenter(); pos = { lat: c.lat, lng: c.lng }; toast('Position GPS indisponible — centre de la carte utilisé'); }
     try {
       await api('/api/watch', {
-        json: { cats, lat: pos.lat, lng: pos.lng, radiusKm: +$('#helpRadius').value, subscription: sub || undefined },
+        json: { cats, lat: pos.lat, lng: pos.lng, radiusKm: +$('#helpRadius').value, visible: $('#helpVisible').checked, subscription: sub || undefined },
       });
       toast('Alertes par e-mail configurées 🔔');
       panel.classList.add('hidden');
@@ -815,6 +880,16 @@ function setupProfile() {
     $('#pfName').value = me.name || '';
     $('#pfEmail').value = me.email || '';
     $('#pfProf').querySelectorAll('.chip').forEach(c => c.classList.toggle('on', c.dataset.v === me.prof));
+    // mes mises en relation dépanneur (hors SOS) : la réponse s'affiche ici
+    const outs = (state?.contact?.outgoing || []).filter(c => !c.pingId);
+    $('#pfContacts').innerHTML = outs.length
+      ? '<div class="sep"></div><p class="small muted">📞 Mes mises en relation dépanneur :</p>' + outs.map(o =>
+          o.status === 'accepted'
+            ? `<p class="small">✅ Numéro partagé : <a href="tel:${esc(o.phone)}"><b>${esc(o.phone)}</b></a>${o.message ? ' — «&nbsp;' + esc(o.message) + '&nbsp;»' : ''}</p>`
+            : o.status === 'declined'
+              ? `<p class="small muted">🔴 Non partagé${o.message ? ' — «&nbsp;' + esc(o.message) + '&nbsp;»' : ''}</p>`
+              : '<p class="small muted">⏳ Demande en attente…</p>').join('')
+      : '';
     $('#profileModal').classList.remove('hidden');
   };
   $('#pfCancel').onclick = () => $('#profileModal').classList.add('hidden');
@@ -986,10 +1061,22 @@ function setupUI() {
   $('#fireToggle').onclick = () => setFireLayer(!fireOn);
   $('#infoBtn').onclick = () => $('#infoModal').classList.remove('hidden');
   $('#infoClose').onclick = () => $('#infoModal').classList.add('hidden');
+  document.querySelector('.logo').onclick = () => location.reload();
+  // bouton « demander son numéro » dans les popups des dépanneurs visibles
+  map.on('popupopen', e => {
+    const b = e.popup.getElement()?.querySelector('.helperAsk');
+    if (b) b.onclick = async () => {
+      try {
+        await api('/api/helpers/contact', { json: { wid: b.dataset.wid } });
+        toast('Demande envoyée 📞 — la réponse arrivera par bannière et e-mail');
+        map.closePopup();
+      } catch (err) { toast(err.message, true); }
+    };
+  });
   $('#sheetClose').onclick = closeSheet;
   $('#placeCancel').onclick = stopPlacing;
   $('#placeLocate').onclick = () => locateForPlacing(true);
-  $('#placeOk').onclick = submitPing;
+  $('#placeOk').onclick = () => placing?.watch ? finishWatchPlacing() : submitPing();
   $('#doneClose').onclick = () => $('#doneModal').classList.add('hidden');
   $('#doneNotif').onclick = async () => {
     let email = state?.me?.email;

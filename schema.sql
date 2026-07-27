@@ -83,6 +83,7 @@ CREATE TABLE IF NOT EXISTS contact_requests (
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;
 
 ALTER TABLE contact_requests ADD COLUMN IF NOT EXISTS target_hash CHAR(64) NOT NULL DEFAULT '';
+ALTER TABLE contact_requests MODIFY ping_id CHAR(10) DEFAULT NULL;
 ALTER TABLE contact_requests ADD COLUMN IF NOT EXISTS message VARCHAR(200) DEFAULT NULL;
 ALTER TABLE contact_requests DROP INDEX IF EXISTS uq_req;
 ALTER TABLE contact_requests ADD UNIQUE KEY IF NOT EXISTS uq_req3 (ping_id, requester_hash, target_hash);

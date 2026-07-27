@@ -44,6 +44,8 @@ a { color: #7ab8ff; }
 .btn.big { font-size: 1.15rem; padding: 1rem; }
 .btn.need { background: #d64541; }
 .btn.help { background: #2e9e5b; }
+.btn.refuge { background: #2f6fed; }
+.logo { cursor: pointer; }
 .btn.ghost { background: #2a3040; color: #cdd3de; font-weight: 600; }
 .btn.small-btn { width: auto; display: inline-block; padding: .5rem .8rem; font-size: .9rem; }
 .btn:disabled { opacity: .5; }
@@ -56,7 +58,8 @@ a { color: #7ab8ff; }
   left: .8rem; right: .8rem; z-index: 600;
   display: flex; gap: .7rem;
 }
-#mainBtns .btn { margin: 0; box-shadow: 0 4px 16px rgba(0,0,0,.45); }
+#mainBtns { gap: .5rem; }
+#mainBtns .btn { margin: 0; box-shadow: 0 4px 16px rgba(0,0,0,.45); font-size: .95rem; padding: .8rem .4rem; white-space: nowrap; }
 
 /* ---- overlays / modals ---- */
 .overlay {
@@ -259,4 +262,10 @@ input[type=text], input[type=tel], input[type=email], input[type=number], textar
   font-size: .62rem; font-weight: 800; border-radius: 999px; padding: 1px 5px; font-family: system-ui;
 }
 .pin .cnt.full { background: #d64541; filter: none; }
+.helper-pin {
+  width: 32px; height: 32px; border-radius: 50%;
+  background: #1e3a26; border: 2px solid #2e9e5b;
+  display: flex; align-items: center; justify-content: center;
+  font-size: 1rem; box-shadow: 0 2px 8px rgba(0,0,0,.5);
+}
 .pin.closedk { filter: grayscale(1); }

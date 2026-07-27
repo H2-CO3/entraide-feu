@@ -124,6 +124,8 @@ const esc = s => String(s ?? '').replace(/[&<>"']/g, c => ({ '&': '&amp;', '<': 
 // identifiant opaque d'un dépanneur au sein d'un ping : permet à l'émetteur de
 // cibler une demande de numéro sans jamais voir le hash d'identité du dépanneur
 const aidOf = (pingId, helperHash) => crypto.createHmac('sha256', SECRET).update(`aid|${pingId}|${helperHash}`).digest('hex').slice(0, 12);
+// idem pour un dépanneur visible sur la carte (hors de tout ping)
+const widOf = hash => crypto.createHmac('sha256', SECRET).update('wid|' + hash).digest('hex').slice(0, 12);
 
 // ---------- notifications : e-mail (canal principal) + push (bonus) ----------
 // Le Web Push est capricieux (Brave, iOS, permissions) : l'e-mail via le SMTP
@@ -166,7 +168,8 @@ async function pushTo(hash, payload) {
   }
 }
 async function pushWatchers(ping) {
-  const rows = await q('SELECT hash, subscription, cats, lat, lng, radius_km FROM watchers WHERE subscription IS NOT NULL AND hash<>?', [ping.owner_hash]);
+  // toutes les vigies (le canal — e-mail et/ou push — est résolu par notify)
+  const rows = await q('SELECT hash, cats, lat, lng, radius_km FROM watchers WHERE hash<>?', [ping.owner_hash]);
   const payload = {
     title: `${TYPE_LABEL[ping.type]} — ${ping.kind === 'besoin' ? 'nouveau SOS' : 'nouveau refuge'}`,
     body: ping.title,
@@ -400,18 +403,21 @@ app.get('/api/state', async (req, res) => {
     WHERE p.hidden = 0 AND p.status = 'open' AND p.created_at > NOW() - INTERVAL ${TTL_H} HOUR
     ORDER BY p.created_at DESC LIMIT 500`);
   const ids = pings.map(p => p.id);
-  const [updates, arrivals, myReqs, zones, alertCount, statsRow, meRows, myWatch, myExpired, officials] = await Promise.all([
+  const [updates, arrivals, myReqs, zones, alertCount, visibleHelpers, statsRow, meRows, myWatch, myExpired, officials] = await Promise.all([
     ids.length ? q(`SELECT ping_id, text, created_at FROM ping_updates WHERE ping_id IN (?) ORDER BY created_at`, [ids]) : [],
     ids.length ? q(`SELECT a.ping_id, a.helper_hash, a.eta, a.phone, a.lat, a.lng, a.pos_at, a.join_status, a.created_at, i.name, i.profession
                     FROM arrivals a LEFT JOIN identities i ON i.hash=a.helper_hash WHERE a.ping_id IN (?)`, [ids]) : [],
     q(`SELECT c.*, p.title AS ping_title, p.owner_hash, ri.name AS requester_name, ri.profession AS requester_prof
-       FROM contact_requests c JOIN pings p ON p.id=c.ping_id
+       FROM contact_requests c LEFT JOIN pings p ON p.id=c.ping_id
        LEFT JOIN identities ri ON ri.hash=c.requester_hash
        WHERE (c.requester_hash=? OR c.target_hash=? OR (c.target_hash='' AND p.owner_hash=?))
          AND c.created_at > NOW() - INTERVAL ${TTL_H} HOUR`, [req.hash, req.hash, req.hash]),
     q('SELECT id, label, lat, lng, radius_m FROM zones'),
     q(`SELECT COUNT(*) AS n FROM watchers w JOIN identities i ON i.hash=w.hash
        WHERE i.email IS NOT NULL OR w.subscription IS NOT NULL`),
+    q(`SELECT w.hash, w.cats, w.lat, w.lng, w.updated_at, i.name, i.profession
+       FROM watchers w LEFT JOIN identities i ON i.hash=w.hash
+       WHERE w.visible=1 AND w.lat IS NOT NULL AND w.updated_at > NOW() - INTERVAL ${TTL_H} HOUR`),
     q("SELECT v FROM stats WHERE k='resolved'"),
     q('SELECT name, profession, email FROM identities WHERE hash=?', [req.hash]),
     q('SELECT cats, lat, lng, radius_km, visible, offer_cats, subscription IS NOT NULL AS subscribed FROM watchers WHERE hash=?', [req.hash]),
@@ -481,6 +487,12 @@ app.get('/api/state', async (req, res) => {
     pings: out,
     zones: zones.map(z => ({ id: z.id, label: z.label, lat: +z.lat, lng: +z.lng, r: z.radius_m })),
     officials: officials.map(o => ({ ...o, lat: +o.lat, lng: +o.lng })),
+    // dépanneurs volontairement visibles : position floutée ~500 m, jamais le hash
+    helpers: visibleHelpers.map(h => ({
+      wid: widOf(h.hash), self: h.hash === req.hash,
+      name: h.name, prof: h.profession, cats: h.cats, at: h.updated_at,
+      lat: Math.round(h.lat / 0.005) * 0.005, lng: Math.round(h.lng / 0.005) * 0.005,
+    })),
     fireDate,
     stats: {
       besoins: out.filter(p => p.kind === 'besoin').length,
@@ -653,6 +665,7 @@ app.post('/api/pings/:id/contact-request', limited('act', 60), async (req, res) 
 
   if (p.owner_hash === req.hash) return res.status(400).json({ error: 'C’est votre propre ping.' });
   await q("INSERT IGNORE INTO contact_requests (ping_id, requester_hash, target_hash) VALUES (?,?,'')", [p.id, req.hash]);
+  // (suite : notification à l'émetteur ci-dessous)
   notify(p.owner_hash, {
     title: `📞 ${who.name || 'Quelqu’un'}${who.profession ? ' (se déclare ' + who.profession + ')' : ''} demande votre numéro`,
     body: p.title,
@@ -661,21 +674,44 @@ app.post('/api/pings/:id/contact-request', limited('act', 60), async (req, res) 
   res.json({ ok: true });
 });
 
+// Entrer en contact avec un dépanneur visible sur la carte (hors de tout ping)
+app.post('/api/helpers/contact', limited('act', 60), async (req, res) => {
+  if (await isBanned(req.hash)) return res.status(403).json({ error: 'Accès suspendu.' });
+  const list = await q('SELECT hash FROM watchers WHERE visible=1 AND lat IS NOT NULL');
+  const target = list.find(w => widOf(w.hash) === req.body.wid);
+  if (!target) return res.status(404).json({ error: 'Dépanneur introuvable (peut-être plus visible).' });
+  if (target.hash === req.hash) return res.status(400).json({ error: 'C’est vous.' });
+  const dup = await q(`SELECT id FROM contact_requests WHERE ping_id IS NULL AND requester_hash=? AND target_hash=?
+                       AND created_at > NOW() - INTERVAL ${TTL_H} HOUR`, [req.hash, target.hash]);
+  if (!dup.length) {
+    await q('INSERT INTO contact_requests (ping_id, requester_hash, target_hash) VALUES (NULL,?,?)', [req.hash, target.hash]);
+    const who = (await q('SELECT name, profession FROM identities WHERE hash=?', [req.hash]))[0] || {};
+    notify(target.hash, {
+      title: `📞 ${who.name || 'Quelqu’un'}${who.profession ? ' (se déclare ' + who.profession + ')' : ''} souhaite vous contacter`,
+      body: 'Vous êtes sollicité comme dépanneur visible sur la carte — acceptez ou refusez via la bannière.',
+      url: '/',
+    }).catch(() => {});
+  }
+  res.json({ ok: true });
+});
+
 // Répondre à une demande de numéro (le destinataire seul) — accepter avec numéro,
 // ou refuser ; dans les deux cas un court message optionnel peut accompagner
 app.post('/api/contact/:reqId/respond', limited('act', 120), async (req, res) => {
-  const c = (await q(`SELECT c.*, p.owner_hash, p.title FROM contact_requests c JOIN pings p ON p.id=c.ping_id WHERE c.id=?`, [req.params.reqId]))[0];
+  const c = (await q(`SELECT c.*, p.owner_hash, p.title FROM contact_requests c LEFT JOIN pings p ON p.id=c.ping_id WHERE c.id=?`, [req.params.reqId]))[0];
   const isTarget = c && (c.target_hash ? c.target_hash === req.hash : c.owner_hash === req.hash);
   if (!isTarget) return res.status(403).json({ error: 'Non autorisé.' });
   const message = String(req.body.message || '').trim().slice(0, 200) || null;
+  const about = c.title ? `« ${c.title} »` : 'votre mise en relation dépanneur';
+  const url = c.ping_id ? `/#p=${c.ping_id}` : '/';
   if (req.body.accept) {
     const phone = cleanPhone(req.body.phone);
     if (!phone) return res.status(400).json({ error: 'Numéro invalide.' });
     await q("UPDATE contact_requests SET status='accepted', phone=?, message=? WHERE id=?", [phone, message, c.id]);
-    notify(c.requester_hash, { title: '✅ Numéro partagé', body: `Pour « ${c.title} » — ouvrez la fiche.`, url: `/#p=${c.ping_id}` }).catch(() => {});
+    notify(c.requester_hash, { title: '✅ Numéro partagé', body: `Pour ${about} — ${c.ping_id ? 'ouvrez la fiche' : 'voir Mon espace → Mes mises en relation'}.`, url }).catch(() => {});
   } else {
     await q("UPDATE contact_requests SET status='declined', message=? WHERE id=?", [message, c.id]);
-    if (message) notify(c.requester_hash, { title: '📨 Réponse à votre demande', body: `« ${c.title} » — ouvrez la fiche.`, url: `/#p=${c.ping_id}` }).catch(() => {});
+    if (message) notify(c.requester_hash, { title: '📨 Réponse à votre demande', body: `${about} — ouvrez la carte.`, url }).catch(() => {});
   }
   res.json({ ok: true });
 });
@@ -686,7 +722,7 @@ app.post('/api/watch', limited('act', 60), async (req, res) => {
   let lat = parseFloat(req.body.lat), lng = parseFloat(req.body.lng);
   if (!isFinite(lat) || !isFinite(lng) || Math.abs(lat) > 90 || Math.abs(lng) > 180) { lat = null; lng = null; }
   const radius = Math.min(200, Math.max(1, parseInt(req.body.radiusKm) || 20));
-  const visible = 0; // feature « halo public » retirée — la position ne sert qu'au filtre d'alertes
+  const visible = req.body.visible && lat != null ? 1 : 0; // opt-in explicite : visible comme dépanneur
   let sub = null;
   if (req.body.subscription && req.body.subscription.endpoint) sub = JSON.stringify(req.body.subscription).slice(0, 4000);
   await q(`INSERT INTO watchers (hash, subscription, cats, lat, lng, radius_km, visible, offer_cats)
