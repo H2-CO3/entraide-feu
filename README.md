@@ -60,7 +60,7 @@ Le pool est limité à 5 connexions (adapté aux hébergements mutualisés).
 
 La géolocalisation et le push exigent HTTPS. Pour tester depuis un téléphone du
 réseau local : `mkcert -key-file certs/dev-key.pem -cert-file certs/dev-cert.pem
-<IP_LAN> localhost`, renseigner `HTTPS_KEY`/`HTTPS_CERT` dans `.env`, puis
+<IP_LAN> localhost`, renseigner `HTTPS_KEY`/`HTTPS_CERT` dans `.env` (HTTPS servi EN PLUS du HTTP, port `HTTPS_PORT`, défaut 3443), puis
 installer la CA mkcert (`rootCA.pem`) sur le téléphone (Android : Paramètres →
 Sécurité → Installer un certificat → CA). Retirer les 2 variables = retour HTTP.
 

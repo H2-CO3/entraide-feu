@@ -664,17 +664,17 @@ init().then(() => {
     setInterval(refreshFirms, 600000).unref();
   } else console.log('FIRMS_MAP_KEY absente — couche feux en mode raster GIBS');
   const port = Number(process.env.PORT) || 3000;
-  // HTTPS local optionnel (dev mobile via mkcert). En prod : variables absentes
-  // → HTTP simple derrière le proxy TLS de l'hébergeur. Même code partout.
-  let server = app;
-  if (process.env.HTTPS_KEY && process.env.HTTPS_CERT) {
-    server = require('https').createServer({
-      key: fs.readFileSync(process.env.HTTPS_KEY),
-      cert: fs.readFileSync(process.env.HTTPS_CERT),
-    }, app);
-  }
-  server.listen(port, () => {
-    console.log(`Entraide Feu sur le port ${port}${server !== app ? ' (HTTPS local)' : ''}`);
+  // HTTP toujours servi (dev desktop via localhost, prod derrière le proxy TLS).
+  app.listen(port, () => {
+    console.log(`Entraide Feu — HTTP sur le port ${port}`);
     console.log(`Admin : ${BASE_URL}/admin.html?key=${ADMIN_KEY}`);
   });
+  // HTTPS local EN PLUS (test mobile sur le LAN, certificats mkcert) — jamais en prod
+  if (process.env.HTTPS_KEY && process.env.HTTPS_CERT) {
+    const httpsPort = Number(process.env.HTTPS_PORT) || 3443;
+    require('https').createServer({
+      key: fs.readFileSync(process.env.HTTPS_KEY),
+      cert: fs.readFileSync(process.env.HTTPS_CERT),
+    }, app).listen(httpsPort, () => console.log(`             + HTTPS local sur le port ${httpsPort} (téléphone : https://IP-LAN:${httpsPort})`));
+  }
 }).catch(e => { console.error('Init BDD impossible :', e.message); process.exit(1); });
