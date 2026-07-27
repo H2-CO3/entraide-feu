@@ -14,7 +14,7 @@ const PROF_LABEL = { pompier: 'se déclare pompier 🚒', policier: 'se déclare
 
 let map, state = null, filter = 'all';
 let markers = new Map(), carLayers = [], zoneLayers = [], officialLayers = [], cluster = null;
-let fireLayers = [], fireOn = true;
+let fireLayers = [], fireOn = true, fireGroup = null, fireMode = null, fireTimer = null;
 let placing = null;      // { draft, marker } pendant le placement
 let recBlob = null, recMime = null, mediaRec = null;
 let photoBlob = null;
@@ -81,15 +81,11 @@ function initMap() {
     maxZoom: 19, attribution: '© OpenStreetMap',
   }).addTo(map);
 
-  // Points chauds satellites : servis par NOTRE serveur (proxy + cache), qui
-  // choisit la dernière date NASA réellement disponible — fiable et léger
-  fireLayers = [
-    L.tileLayer.wms('/fires/wms', {
-      layers: 'fires', format: 'image/png', transparent: true,
-      tileSize: 512, maxNativeZoom: 11, opacity: .8, updateWhenIdle: true,
-    }),
-  ];
-  setFireLayer(true);
+  // Points chauds satellites — vectoriel FIRMS (horodaté par point) avec
+  // repli raster GIBS si le serveur n'a pas de clé. Rendu canvas : léger.
+  fireGroup = L.layerGroup();
+  loadFires();
+  fireTimer = setInterval(loadFires, 600000);
 
   cluster = L.markerClusterGroup({ maxClusterRadius: 45, showCoverageOnHover: false });
   map.addLayer(cluster);
@@ -98,11 +94,48 @@ function initMap() {
   }, () => {}, { timeout: 5000 });
 }
 
+// couleur d'un point de feu selon son âge — l'info de sécurité, c'est la fraîcheur
+function fireColor(ageH) {
+  return ageH < 6 ? '#ff2d20' : ageH < 12 ? '#ff8c00' : ageH < 24 ? '#c96a2a' : '#8a7d72';
+}
+const fireRenderer = L.canvas({ padding: .3 });
+
+async function loadFires() {
+  try {
+    const d = await api('/api/fires');
+    fireMode = d.mode;
+    if (d.mode === 'firms') {
+      fireGroup.clearLayers();
+      const now = Date.now();
+      for (const p of d.points) {
+        const ageH = (now - new Date(p.t).getTime()) / 3600000;
+        const when = new Date(p.t).toLocaleString('fr-FR', { day: 'numeric', month: 'numeric', hour: '2-digit', minute: '2-digit' });
+        L.circleMarker([p.lat, p.lng], {
+          renderer: fireRenderer, radius: 5, stroke: false,
+          fillColor: fireColor(ageH), fillOpacity: ageH < 24 ? .85 : .55,
+        }).bindPopup(
+          `🔥 <b>Détection satellite</b><br>le ${when} — il y a ${ageH < 1 ? '&lt; 1 h' : Math.round(ageH) + ' h'}<br>` +
+          `confiance ${({ h: 'élevée', n: 'normale', l: 'faible' })[p.conf] || p.conf} · ${p.sat}${p.frp ? ' · ' + Math.round(p.frp) + ' MW' : ''}`
+        ).addTo(fireGroup);
+      }
+      const fd = $('#fireDate');
+      if (fd) fd.textContent = `maj ${new Date(d.updatedAt).toLocaleTimeString('fr-FR', { hour: '2-digit', minute: '2-digit' })}`;
+    } else if (!fireLayers.length) {
+      // repli raster : l'ancien proxy GIBS
+      fireLayers = [L.tileLayer.wms('/fires/wms', {
+        layers: 'fires', format: 'image/png', transparent: true,
+        tileSize: 512, maxNativeZoom: 11, opacity: .8, updateWhenIdle: true,
+      })];
+    }
+    setFireLayer(fireOn);
+  } catch { /* prochaine tentative dans 10 min */ }
+}
+
 function setFireLayer(on) {
   fireOn = on;
-  fireLayers.forEach(l => on ? l.addTo(map) : l.remove());
+  if (fireMode === 'firms') { fireLayers.forEach(l => l.remove()); on ? fireGroup.addTo(map) : fireGroup.remove(); }
+  else { fireGroup.remove(); fireLayers.forEach(l => on ? l.addTo(map) : l.remove()); }
   $('#fireToggle')?.classList.toggle('on', on);
-  // le disclaimer satellites est dit une fois pour toutes dans l'onboarding
 }
 
 function render() {
@@ -111,7 +144,7 @@ function render() {
   const s = state.stats;
   const statsTxt = `${s.besoins} besoins · ${s.collectes} collectes · ${s.refuges} refuges · 🔔 ${s.alerte} en alerte · ✅ ${s.resolved} résolus`;
   document.querySelectorAll('.statsline').forEach(el => el.textContent = statsTxt);
-  const fd = $('#fireDate'); if (fd && state.fireDate) fd.textContent = state.fireDate;
+  if (fireMode !== 'firms') { const fd = $('#fireDate'); if (fd && state.fireDate) fd.textContent = '(' + state.fireDate + ')'; }
 
   // marqueurs
   const keep = new Set();

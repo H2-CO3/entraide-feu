@@ -193,6 +193,57 @@ app.get('/fires/wms', async (req, res) => {
   } catch { res.end(EMPTY_PNG); } // une tuile transparente vaut mieux qu'une carte cassée
 });
 
+// ---------- couche feux : détections vectorielles FIRMS (canal principal) ----------
+// Une requête serveur toutes les 10 min pour TOUS les visiteurs (quota FIRMS :
+// 5 000 / 10 min — on en consomme 3). Chaque point garde son heure d'acquisition,
+// sa confiance et sa puissance : la carte peut dire QUAND le feu a été vu.
+const FIRMS_KEY = process.env.FIRMS_MAP_KEY || '';
+const FIRMS_BBOX = '-2.0,43.3,1.5,46.2'; // west,south,east,north — même zone que l'import (à adapter si fork)
+const FIRMS_SOURCES = ['VIIRS_SNPP_NRT', 'VIIRS_NOAA20_NRT', 'VIIRS_NOAA21_NRT'];
+let firePoints = [], fireUpdatedAt = null;
+
+function parseFirmsCsv(text) {
+  const lines = text.trim().split('\n');
+  const idx = Object.fromEntries(lines.shift().split(',').map((h, i) => [h.trim(), i]));
+  const out = [];
+  for (const line of lines) {
+    const c = line.split(',');
+    const lat = parseFloat(c[idx.latitude]), lng = parseFloat(c[idx.longitude]);
+    if (!isFinite(lat) || !isFinite(lng)) continue;
+    const hhmm = String(c[idx.acq_time] || '0').padStart(4, '0');
+    out.push({
+      lat, lng,
+      t: `${c[idx.acq_date]}T${hhmm.slice(0, 2)}:${hhmm.slice(2)}:00Z`,
+      sat: { N: 'Suomi-NPP', 1: 'NOAA-20', 2: 'NOAA-21' }[c[idx.satellite]] || c[idx.satellite],
+      conf: c[idx.confidence], // l / n / h
+      frp: parseFloat(c[idx.frp]) || null,
+    });
+  }
+  return out;
+}
+
+async function refreshFirms() {
+  if (!FIRMS_KEY) return;
+  try {
+    const all = [];
+    for (const src of FIRMS_SOURCES) {
+      const r = await fetch(`https://firms.modaps.eosdis.nasa.gov/api/area/csv/${FIRMS_KEY}/${src}/${FIRMS_BBOX}/2`,
+        { signal: AbortSignal.timeout(20000) });
+      const text = await r.text();
+      if (!r.ok || /^(Invalid|Error)/i.test(text)) throw new Error(`${src}: ${text.slice(0, 100)}`);
+      all.push(...parseFirmsCsv(text));
+    }
+    firePoints = all;
+    fireUpdatedAt = new Date().toISOString();
+  } catch (e) { logErr('refreshFirms', e); } // les derniers points connus restent servis
+}
+
+app.get('/api/fires', (req, res) => {
+  res.set('Cache-Control', 'public, max-age=300');
+  if (FIRMS_KEY && fireUpdatedAt) return res.json({ mode: 'firms', updatedAt: fireUpdatedAt, points: firePoints });
+  res.json({ mode: 'gibs', date: fireDate }); // repli raster si pas de clé / premier fetch raté
+});
+
 // ---------- uploads ----------
 const upload = multer({
   storage: multer.memoryStorage(),
@@ -606,8 +657,12 @@ init().then(() => {
   cleanup();
   doImport();
   setInterval(doImport, 6 * 3600000).unref();
-  refreshFireDate().then(() => console.log(`Couche feux : données NASA du ${fireDate}`));
+  refreshFireDate().then(() => console.log(`Couche feux (repli GIBS) : données NASA du ${fireDate}`));
   setInterval(refreshFireDate, 1800000).unref();
+  if (FIRMS_KEY) {
+    refreshFirms().then(() => console.log(`FIRMS : ${firePoints.length} détections sur 48 h`));
+    setInterval(refreshFirms, 600000).unref();
+  } else console.log('FIRMS_MAP_KEY absente — couche feux en mode raster GIBS');
   const port = Number(process.env.PORT) || 3000;
   app.listen(port, () => {
     console.log(`Entraide Feu sur le port ${port}`);
