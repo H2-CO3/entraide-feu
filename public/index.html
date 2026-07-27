@@ -94,6 +94,7 @@
       <button class="btn big need" id="obNeed">🆘 Lancer un SOS</button>
       <button class="btn big help" id="obHelp">💪 Je dépanne <span class="small">(alertes)</span></button>
       <button class="btn big" id="obRefuge">🏠 Ouvrir un refuge</button>
+      <button class="btn big ghost" id="obDemo">🎭 Voir un exemple d'utilisation</button>
       <button class="linklike" id="obSkip">Juste voir la carte</button>
     </div>
   </div>
@@ -127,6 +128,13 @@
   <button class="btn need" id="btnNeed">🆘 SOS</button>
   <button class="btn help" id="btnHelp">💪 Dépanner</button>
   <button class="btn refuge" id="btnRefuge">🏠 Refuge</button>
+</div>
+
+<!-- barre du mode démonstration -->
+<div id="demoBar" class="hidden">
+  <p>🎭 <b>Démonstration</b> — tout ce que vous voyez est un <b>exemple fictif</b> de ce que
+  la carte permet en situation réelle. Explorez librement !</p>
+  <button class="btn help" id="demoJoin">🙌 Participer pour de vrai</button>
 </div>
 
 <!-- barre de placement du pin -->
@@ -307,6 +315,19 @@
     <button class="prow" id="pfReplay"><span>🔄 Revoir l'introduction</span><span class="chev">›</span></button>
 
     <div id="pfContacts"></div>
+
+    <div class="sep"></div>
+    <p class="small"><b>📡 Et si Internet tombe ?</b></p>
+    <p class="small muted">Entraide Feu dépend <b>entièrement d'Internet</b> — or en situation d'urgence,
+    l'accès au réseau n'est jamais garanti (antennes endommagées, saturation, coupures d'électricité).
+    Préparez des canaux de communication <b>indépendants des infrastructures</b> :</p>
+    <a class="prow" href="https://bitchat.free/" target="_blank" rel="noopener"><span>💬 BitChat — messagerie Bluetooth de proximité, sans Internet ni opérateur</span><span class="chev">›</span></a>
+    <a class="prow" href="https://meshtastic.org/" target="_blank" rel="noopener"><span>📻 Meshtastic — réseau maillé radio LoRa longue portée, sans réseau</span><span class="chev">›</span></a>
+    <a class="prow" href="https://bitcoin.org/fr/" target="_blank" rel="noopener"><span>₿ Bitcoin — monnaie utilisable sans banques, y compris hors réseau</span><span class="chev">›</span></a>
+    <a class="prow" href="https://libre-market.com/" target="_blank" rel="noopener"><span>🛒 Libre Market — place d'échange libre, pour ceux qui en auraient besoin</span><span class="chev">›</span></a>
+    <p class="small muted">₿ Rappel : Bitcoin est une monnaie <b>transparente</b> — chaque transaction est
+    publique et traçable pour toujours, ce qui en fait un choix stupide pour un usage criminel.
+    Et pour rester en conformité : <b>déclarez vos bitcoins</b> (comptes et plus-values) au fisc.</p>
 
     <div class="sep"></div>
     <button class="prow prow-danger" id="pfLogout"><span>🚪 Se déconnecter de cet appareil</span><span class="chev">›</span></button>

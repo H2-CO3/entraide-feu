@@ -21,6 +21,7 @@ let photoBlob = null;
 let openPingId = null;
 let pollDelay = 20000, pollTimer = null;
 let knownIds = null;
+let demoMode = false;
 
 /* ---------- utilitaires ---------- */
 function toast(msg, err) {
@@ -271,7 +272,32 @@ function renderMainButtons() {
 }
 
 /* ---------- polling ---------- */
+/* ---------- mode démonstration : exemples fictifs, interactions → Participer ---------- */
+async function enterDemo() {
+  try {
+    const demo = await api('/demo.json', { method: 'GET' });
+    demoMode = true;
+    clearTimeout(pollTimer); // le poll ne doit pas écraser les exemples
+    state = { ...demo, me: { name: null, prof: null, email: null, watch: null }, contact: { incoming: [], outgoing: [] }, myExpired: [] };
+    closeSheet();
+    $('#onboarding').classList.add('hidden');
+    $('#mainBtns').classList.add('hidden');
+    $('#demoBar').classList.remove('hidden');
+    map.setView([44.75, -0.92], 10); // vue d'ensemble de la crise d'exemple
+    render();
+  } catch { toast('Démo indisponible', true); }
+}
+function exitDemo() {
+  demoMode = false;
+  $('#demoBar').classList.add('hidden');
+  $('#mainBtns').classList.remove('hidden');
+  closeSheet();
+  poll(); // retour aux vraies données
+  toast('Bienvenue — la carte est maintenant la vraie 🙌');
+}
+
 async function poll() {
+  if (demoMode) return; // en démo, on n'écrase pas les exemples
   clearTimeout(pollTimer);
   try {
     const data = await api('/api/state');
@@ -547,6 +573,14 @@ function renderSheet(id, soft) {
     $('#fAskPhone').onclick = async () => {
       try { await api(`/api/pings/${p.id}/contact-request`, { method: 'POST', json: {} }); toast('Demande envoyée — réponse ici même'); poll(); } catch (e) { toast(e.message, true); }
     };
+  }
+  // en démonstration : toutes les interactions sont remplacées par « Participer »
+  if (demoMode) {
+    act.innerHTML = `
+      <p class="small muted" style="text-align:center">🎭 Ceci est un exemple — en réel, vous pourriez agir ici.</p>
+      <button class="btn big help" id="fParticiper">🙌 Participer pour de vrai</button>`;
+    $('#fParticiper').onclick = exitDemo;
+    return;
   }
   const shareBtn = $('#fShare');
   if (shareBtn) shareBtn.onclick = () => sharePing(p);
@@ -1049,6 +1083,8 @@ function setupOnboarding() {
   $('#obNeed').onclick = () => { $('#onboarding').classList.add('hidden'); openEmit('besoin'); };
   $('#obHelp').onclick = () => { $('#onboarding').classList.add('hidden'); $('#btnHelp').click(); };
   $('#obRefuge').onclick = () => { $('#onboarding').classList.add('hidden'); openEmit('offre'); };
+  $('#obDemo').onclick = enterDemo;
+  $('#demoJoin').onclick = exitDemo;
   $('#obSkip').onclick = () => $('#onboarding').classList.add('hidden');
 }
 

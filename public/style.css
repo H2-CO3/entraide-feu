@@ -160,6 +160,15 @@ input[type=text], input[type=tel], input[type=email], input[type=number], textar
 }
 @keyframes pinbounce { from { transform: translate(-50%, -140%); } }
 
+/* ---- mode démonstration ---- */
+#demoBar {
+  position: absolute; bottom: calc(env(safe-area-inset-bottom, 0px) + .9rem);
+  left: .8rem; right: .8rem; z-index: 800;
+  background: #2b2145; border: 1px solid #6a4fc9; border-radius: 14px;
+  padding: .8rem .9rem; box-shadow: 0 4px 16px rgba(0,0,0,.5); font-size: .92rem;
+}
+#demoBar .btn { margin: .5rem 0 0; }
+
 /* ---- placement pin ---- */
 #placeBar {
   position: absolute; bottom: calc(env(safe-area-inset-bottom, 0px) + .9rem);
