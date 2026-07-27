@@ -39,9 +39,14 @@ server.js (Express)
 - Un cookie `fid` **HttpOnly** anonyme, posé par le serveur à la première visite.
 - La base ne stocke que `HMAC-SHA256(fid, SECRET)` — une fuite de base ne permet
   d'usurper personne.
-- Le cookie est l'unique preuve de propriété : clôturer ses fiches, annuler son
-  « j'arrive », recevoir ses réponses. Filet de secours : code de clôture à
-  4 chiffres par fiche (anti-brute-force 10 essais/h/IP).
+- Le cookie est l'unique preuve de propriété : clôturer ses SOS, annuler son
+  « j'arrive », recevoir ses réponses.
+- **Code de session** (remis une seule fois à l'onboarding) : le cookie est
+  DÉRIVÉ du code (`fid = HMAC(SECRET, code)`) — le serveur ne stocke ni l'un ni
+  l'autre, seulement l'empreinte du fid. Saisir le code sur un autre appareil
+  reconstruit la même identité (profil, publications, alertes). Régénération
+  possible (migration des empreintes vers le nouveau fid, l'ancien code meurt).
+  Entropie ~39 bits + rate limit 10/h/IP sur la récupération.
 - Prénom obligatoire, profession déclarative (« se déclare pompier » — jamais
   « vérifié », c'est un choix juridique délibéré).
 

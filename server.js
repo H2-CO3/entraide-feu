@@ -64,17 +64,33 @@ for (const m of ['get', 'post']) {
       : f));
 }
 
-// ---------- identité cookie ----------
+// ---------- identité cookie & code de session ----------
+const hashFid = fid => crypto.createHmac('sha256', SECRET).update(fid).digest('hex');
+function setFidCookie(req, res, fid) {
+  const secure = req.secure || req.headers['x-forwarded-proto'] === 'https' ? '; Secure' : '';
+  res.setHeader('Set-Cookie', `fid=${fid}; Max-Age=31536000; Path=/; HttpOnly; SameSite=Lax${secure}`);
+}
+// Le code de session (remis une seule fois à l'onboarding) DÉRIVE le cookie :
+// fid = HMAC(SECRET, code). Le serveur ne stocke ni le code ni le cookie — le
+// saisir sur un autre appareil reconstruit mathématiquement la même identité.
+const CODE_ALPHABET = '23456789ABCDEFGHJKMNPQRSTVWXYZ'; // sans 0/O/1/I ambigus
+function genSessionCode() {
+  let s = '';
+  for (let i = 0; i < 8; i++) s += CODE_ALPHABET[crypto.randomInt(CODE_ALPHABET.length)];
+  return `FEU-${s.slice(0, 4)}-${s.slice(4)}`;
+}
+const normCode = c => String(c || '').toUpperCase().replace(/[^A-Z0-9]/g, '').replace(/^FEU/, '');
+const fidFromCode = code => crypto.createHmac('sha256', SECRET).update('fid|' + code).digest('hex').slice(0, 48);
+
 app.use((req, res, next) => {
   const cookies = Object.fromEntries((req.headers.cookie || '').split(';')
     .map(s => s.trim().split('=')).filter(a => a[0]).map(a => [a[0], decodeURIComponent(a.slice(1).join('='))]));
   let fid = cookies.fid;
   if (!fid || !/^[a-f0-9]{48}$/.test(fid)) {
     fid = crypto.randomBytes(24).toString('hex');
-    const secure = req.secure || req.headers['x-forwarded-proto'] === 'https' ? '; Secure' : '';
-    res.setHeader('Set-Cookie', `fid=${fid}; Max-Age=31536000; Path=/; HttpOnly; SameSite=Lax${secure}`);
+    setFidCookie(req, res, fid);
   }
-  req.hash = crypto.createHmac('sha256', SECRET).update(fid).digest('hex');
+  req.hash = hashFid(fid);
   next();
 });
 
@@ -274,6 +290,40 @@ function deleteFiles(ping) {
 // API
 // ============================================================
 
+// Fait basculer toutes les traces d'une identité vers un nouveau hash
+// (émission/régénération du code : le cookie devient celui dérivé du code)
+async function migrateIdentity(oldHash, newHash) {
+  if (oldHash === newHash) return;
+  await q('UPDATE IGNORE identities SET hash=? WHERE hash=?', [newHash, oldHash]);
+  await q('DELETE FROM identities WHERE hash=?', [oldHash]);
+  for (const [t, cols] of [['pings', ['owner_hash']], ['arrivals', ['helper_hash']], ['reports', ['reporter_hash']],
+    ['watchers', ['hash']], ['contact_requests', ['requester_hash', 'target_hash']]]) {
+    for (const col of cols) await q(`UPDATE IGNORE ${t} SET ${col}=? WHERE ${col}=?`, [newHash, oldHash]);
+  }
+}
+
+// Émettre (ou régénérer) le code de session — l'ancien code devient invalide
+app.post('/api/session/code', limited('code-gen', 10), async (req, res) => {
+  const code = genSessionCode();
+  const fid = fidFromCode(normCode(code));
+  const newHash = hashFid(fid);
+  await q('INSERT IGNORE INTO identities (hash) VALUES (?)', [req.hash]); // identité assurée avant bascule
+  await migrateIdentity(req.hash, newHash);
+  setFidCookie(req, res, fid);
+  res.json({ code });
+});
+
+// Récupérer sa session sur un nouvel appareil avec le code
+app.post('/api/session/recover', limited('recover', 10), async (req, res) => {
+  const code = normCode(req.body.code);
+  if (code.length !== 8) return res.status(400).json({ error: 'Code invalide (format FEU-XXXX-XXXX).' });
+  const fid = fidFromCode(code);
+  const found = await q('SELECT name FROM identities WHERE hash=?', [hashFid(fid)]);
+  if (!found.length) return res.status(404).json({ error: 'Code inconnu.' });
+  setFidCookie(req, res, fid);
+  res.json({ ok: true, name: found[0].name });
+});
+
 // Profil d'onboarding (facultatif, sur l'honneur)
 app.post('/api/onboard', limited('onboard', 30), async (req, res) => {
   const name = String(req.body.name || '').trim().slice(0, 40) || null;
@@ -320,7 +370,6 @@ app.get('/api/state', async (req, res) => {
     return {
       id: p.id, kind: p.kind, type: p.type, title: p.title, message: p.message,
       places: p.places, animals: p.animals == null ? null : !!p.animals, isFull: !!p.is_full,
-      closeCode: mine ? p.close_code : undefined, // le code de secours, visible du seul émetteur
       // partie privée : réservée à l'émetteur et à ceux qui ont dit « j'arrive »
       hasPrivate: !!p.private_message,
       privateMessage: engaged ? p.private_message : undefined,
@@ -562,7 +611,7 @@ app.post('/api/watch', limited('act', 60), async (req, res) => {
            ON DUPLICATE KEY UPDATE subscription=COALESCE(VALUES(subscription), subscription),
              cats=VALUES(cats), lat=VALUES(lat), lng=VALUES(lng), radius_km=VALUES(radius_km),
              visible=VALUES(visible), offer_cats=VALUES(offer_cats)`,
-    [req.hash, sub, cats, lat, lng, radius, visible, offerCats]);
+    [req.hash, sub, cats, lat, lng, radius, visible, '']);
   res.json({ ok: true });
 });
 app.post('/api/watch/stop', async (req, res) => {

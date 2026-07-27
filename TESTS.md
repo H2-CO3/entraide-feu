@@ -93,12 +93,16 @@ démarré, et chaque testeur vide les données du site (ou fenêtre privée neuv
 - [ ] La mise à jour horodatée apparaît chez tous en ≤ 30 s.
 - [ ] Clôture : la fiche disparaît partout, « ✅ résolus » +1, le bouton A redevient « Besoin d'aide ».
 
-## S7 — Clôture par code (A émet, D clôture)
-1. A émet un besoin, note le code, **vide ses cookies** (simule le téléphone perdu).
-2. D ouvre la fiche → « C'est ma fiche mais j'ai changé d'appareil » : mauvais code ×3, puis le bon.
+## S7 — Code de session : remise et récupération (A)
+1. À l'onboarding, après « J'accepte » : noter le code FEU-XXXX-XXXX affiché (bouton copier).
+2. A émet un SOS + configure une vigie, puis **vide les données du site** (simule le téléphone perdu).
+3. Sur le « nouvel appareil » : onboarding → « 🔑 J'ai déjà un code de session » → saisir le code.
+4. Tester aussi : mauvais code, puis 👤 → « Régénérer mon code » → vérifier que l'ancien est mort.
 
-- [ ] Mauvais code refusé ; après ~10 essais : « Trop d'essais » (429).
-- [ ] Bon code : fiche clôturée.
+- [ ] Le code n'est affiché qu'une seule fois (pas re-consultable ensuite).
+- [ ] Après récupération : profil, SOS (avec bouton clôturer), vigie — tout est là.
+- [ ] Mauvais code → « Code inconnu » ; ~10 essais → « Trop de requêtes » (429).
+- [ ] Après régénération, l'ancien code ne fonctionne plus, le nouveau récupère tout.
 
 ## S8 — Refuge citoyen (C héberge, A demande)
 1. C : « Ouvrir un refuge » → 4 places, 🐾 animaux, partie privée = adresse exacte.

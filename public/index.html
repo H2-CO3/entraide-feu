@@ -24,7 +24,8 @@
       <p class="lead">La carte d'entraide de la zone incendiée.<br>
       Des SOS, des refuges, des coups de main —<br>en direct. Sans compte, sans inscription.</p>
       <button class="btn big" id="obNext1">Continuer</button>
-      <p class="ob-dots">● ○ ○ ○</p>
+      <button class="linklike" id="obRecover">🔑 J'ai déjà un code de session</button>
+      <p class="ob-dots">● ○ ○ ○ ○</p>
     </div>
     <div class="ob-step hidden" id="ob2">
       <p class="ob-emoji">⚠️</p>
@@ -36,7 +37,7 @@
       plusieurs heures de latence, <b>indicatifs seulement</b> — ne vous y fiez jamais pour votre sécurité.
       Les consignes officielles (préfecture, FR-Alert) priment toujours.</p>
       <button class="btn big" id="obNext2">J'ai compris</button>
-      <p class="ob-dots">○ ● ○ ○</p>
+      <p class="ob-dots">○ ● ○ ○ ○</p>
     </div>
     <div class="ob-step hidden" id="ob3">
       <p class="ob-emoji">👤</p>
@@ -50,7 +51,7 @@
         <button class="chip" data-v="soignant">⚕️ Soignant</button>
       </div>
       <button class="btn big" id="obNext3">Continuer</button>
-      <p class="ob-dots">○ ○ ● ○</p>
+      <p class="ob-dots">○ ○ ● ○ ○</p>
     </div>
     <div class="ob-step hidden" id="ob4">
       <p class="ob-emoji">🍪</p>
@@ -58,11 +59,21 @@
       <p class="lead">Un cookie technique <b>anonyme</b> identifie votre navigateur — jamais votre personne —
       pour que vous puissiez gérer vos SOS et refuges.</p>
       <p class="small muted">En acceptant, vous engagez votre responsabilité sur la sincérité de vos déclarations.
-      Tout expire automatiquement sous 24&nbsp;h. Si vous changez d'appareil, un <b>code de secours 🔑</b>
-      affiché sur vos publications vous permet d'en garder la main.
-      <a href="/legal.html" target="_blank">Mentions légales</a></p>
+      Tout expire automatiquement sous 24&nbsp;h. À l'écran suivant, un <b>code de session 🔑</b>
+      unique vous sera remis. <a href="/legal.html" target="_blank">Mentions légales</a></p>
       <button class="btn big" id="obAccept">J'accepte</button>
-      <p class="ob-dots">○ ○ ○ ●</p>
+      <p class="ob-dots">○ ○ ○ ● ○</p>
+    </div>
+    <div class="ob-step hidden" id="obCode">
+      <p class="ob-emoji">🔑</p>
+      <h1>Votre code de session</h1>
+      <p class="code" id="obCodeValue">…</p>
+      <p class="lead small">C'est le <b>seul moyen</b> de retrouver vos SOS, refuges et échanges
+      si vous changez d'appareil ou effacez vos cookies.<br>
+      <b>Notez-le ou copiez-le maintenant</b> — il ne sera plus jamais affiché.</p>
+      <button class="btn" id="obCodeCopy">📋 Copier le code</button>
+      <button class="btn big" id="obCodeOk">C'est noté</button>
+      <p class="ob-dots">○ ○ ○ ○ ●</p>
     </div>
     <div class="ob-step hidden" id="ob5">
       <p class="ob-emoji">🤝</p>
@@ -181,7 +192,7 @@
 <div id="doneModal" class="overlay hidden">
   <div class="modal">
     <h2 id="doneTitle">✅ Publié !</h2>
-    <p class="small muted">Visible sur la carte pendant 24&nbsp;h. Retrouvez votre code de secours 🔑 sur votre publication.</p>
+    <p class="small muted">Visible sur la carte pendant 24&nbsp;h.</p>
     <button class="btn" id="doneNotif">🔔 Me prévenir quand quelqu'un arrive</button>
     <button class="btn ghost" id="doneShare">📤 Partager la fiche</button>
     <button class="linklike" id="doneClose">Fermer</button>
@@ -248,6 +259,8 @@
     <button class="prow" id="pfInfo"><span>ℹ️ Légende &amp; renseignements officiels</span><span class="chev">›</span></button>
     <a class="prow" href="/affiche.html" target="_blank"><span>🖨️ Affiche &amp; QR code à imprimer</span><span class="chev">›</span></a>
     <a class="prow" href="/legal.html" target="_blank"><span>📄 Mentions légales &amp; données</span><span class="chev">›</span></a>
+    <button class="prow" id="pfRecover"><span>🔑 Récupérer une session (j'ai un code)</span><span class="chev">›</span></button>
+    <button class="prow" id="pfNewCode"><span>♻️ Régénérer mon code de session</span><span class="chev">›</span></button>
     <button class="prow" id="pfReplay"><span>🔄 Revoir l'introduction</span><span class="chev">›</span></button>
 
     <div class="sep"></div>

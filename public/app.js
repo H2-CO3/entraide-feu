@@ -404,9 +404,7 @@ function renderSheet(id, soft) {
         <button class="btn" id="fUpdBtn">📢 Publier la mise à jour</button>
       </div>
       ${isRefuge ? `<div class="row"><button class="btn ${p.isFull ? 'help' : 'ghost'}" id="fFull">${p.isFull ? '🟢 Rouvrir des places' : '⛔ Afficher complet'}</button></div>` : ''}
-      <div class="row"><button class="btn ghost" id="fShare">📤 Partager</button><button class="btn" id="fClose">✅ Clôturer</button></div>
-      <p class="small muted">🔑 Code de secours : <b>${esc(p.closeCode || '')}</b> — si vous perdez cet appareil,
-      ce code permet de clôturer ${isRefuge ? 'ce refuge' : 'ce SOS'} depuis n'importe quel autre.</p>`;
+      <div class="row"><button class="btn ghost" id="fShare">📤 Partager</button><button class="btn" id="fClose">✅ Clôturer</button></div>`;
     const fFull = $('#fFull');
     if (fFull) fFull.onclick = async () => {
       try { await api(`/api/pings/${p.id}/full`, { json: { full: !p.isFull } }); toast(p.isFull ? 'Refuge rouvert 🟢' : 'Refuge affiché complet ⛔'); poll(); } catch (e) { toast(e.message, true); }
@@ -455,13 +453,7 @@ function renderSheet(id, soft) {
         <button class="btn ghost" id="fShare">📤 Partager</button>
         <button class="btn ghost" id="fReport">⚠️</button>
       </div>
-      <button class="linklike" id="fCodeLink">C'est ${isRefuge ? 'mon refuge' : 'mon SOS'} mais j'ai changé d'appareil (code de clôture)</button>
-      <div id="fCodeForm" class="hidden">
-        <div class="row">
-          <input type="text" id="fCode" inputmode="numeric" maxlength="4" placeholder="Code à 4 chiffres">
-          <button class="btn" id="fCodeGo">Clôturer</button>
-        </div>
-      </div>`;
+      <p class="muted small">${isRefuge ? 'Votre refuge' : 'Votre SOS'} mais autre appareil ? 👤 → « Récupérer une session » avec votre code 🔑.</p>`;
     $('#fArrive').onclick = () => { $('#arrForm').classList.remove('hidden'); $('#fArrive').classList.add('hidden'); chipsToggle($('#arrEta'), false); };
     $('#arrGo').onclick = async () => {
       const pos = await getPosition();
@@ -472,13 +464,6 @@ function renderSheet(id, soft) {
     };
     $('#fAskPhone').onclick = async () => {
       try { await api(`/api/pings/${p.id}/contact-request`, { method: 'POST', json: {} }); toast('Demande envoyée — réponse ici même'); askNotifPermission(); poll(); } catch (e) { toast(e.message, true); }
-    };
-    $('#fCodeLink').onclick = () => { $('#fCodeForm').classList.remove('hidden'); $('#fCodeLink').classList.add('hidden'); $('#fCode').focus(); };
-    $('#fCodeGo').onclick = async () => {
-      const code = $('#fCode').value.trim();
-      if (!/^\d{4}$/.test(code)) return toast('Le code fait 4 chiffres', true);
-      try { await api(`/api/pings/${p.id}/close`, { json: { code } }); toast('Clôturé ✅'); closeSheet(); poll(); }
-      catch (e) { toast('Code incorrect', true); }
     };
   }
   const shareBtn = $('#fShare');
@@ -783,6 +768,25 @@ function setupProfile() {
     } catch (e) { toast(e.message, true); }
   };
   $('#pfHelp').onclick = () => { $('#profileModal').classList.add('hidden'); $('#btnHelp').click(); };
+  $('#pfRecover').onclick = async () => {
+    const code = prompt('Code de session (FEU-XXXX-XXXX) — la session actuelle de cet appareil sera remplacée :');
+    if (!code) return;
+    try {
+      const r = await api('/api/session/recover', { json: { code } });
+      $('#profileModal').classList.add('hidden');
+      toast(`Session récupérée${r.name ? ' — re-bonjour ' + r.name : ''} ✅`);
+      poll();
+    } catch (e) { toast(e.message, true); }
+  };
+  $('#pfNewCode').onclick = async () => {
+    if (!confirm('Régénérer votre code de session ? L\'ancien code ne fonctionnera plus. Le nouveau ne sera affiché qu\'une seule fois.')) return;
+    try {
+      const r = await api('/api/session/code', { json: {} });
+      if (await copyText(r.code)) toast('Nouveau code copié 📋');
+      alert(`Votre nouveau code de session :\n\n${r.code}\n\nNotez-le maintenant — il ne sera plus jamais affiché.`);
+      poll();
+    } catch (e) { toast(e.message, true); }
+  };
   $('#pfInfo').onclick = () => { $('#profileModal').classList.add('hidden'); $('#infoModal').classList.remove('hidden'); };
   $('#pfReplay').onclick = () => {
     $('#profileModal').classList.add('hidden');
@@ -795,6 +799,7 @@ function setupProfile() {
 /* ---------- onboarding ---------- */
 function obGoto(n) {
   for (let i = 1; i <= 5; i++) $('#ob' + i).classList.toggle('hidden', i !== n);
+  $('#obCode').classList.add('hidden');
 }
 function setupOnboarding() {
   if (!localStorage.getItem('onboarded')) $('#onboarding').classList.remove('hidden');
@@ -807,9 +812,31 @@ function setupOnboarding() {
   };
   $('#obAccept').onclick = async () => {
     await api('/api/onboard', { json: { name: $('#obName').value.trim(), profession: chipsValues($('#obProf'))[0] || null } }).catch(() => {});
-    poll(); // rafraîchit state.me immédiatement
     localStorage.setItem('onboarded', '1');
-    obGoto(5);
+    // remise du code de session — affiché UNE seule fois
+    try {
+      const r = await api('/api/session/code', { json: {} });
+      $('#obCodeValue').textContent = r.code;
+      for (let i = 1; i <= 5; i++) $('#ob' + i).classList.add('hidden');
+      $('#obCode').classList.remove('hidden');
+    } catch { obGoto(5); } // si l'émission échoue, on n'empêche pas d'entrer
+    poll(); // rafraîchit state.me avec la nouvelle identité
+  };
+  $('#obCodeCopy').onclick = async () => {
+    if (await copyText($('#obCodeValue').textContent)) toast('Code copié 📋');
+    else toast('Copie bloquée — notez-le à la main', true);
+  };
+  $('#obCodeOk').onclick = () => { $('#obCode').classList.add('hidden'); obGoto(5); };
+  $('#obRecover').onclick = async () => {
+    const code = prompt('Entrez votre code de session (FEU-XXXX-XXXX) :');
+    if (!code) return;
+    try {
+      const r = await api('/api/session/recover', { json: { code } });
+      localStorage.setItem('onboarded', '1');
+      $('#onboarding').classList.add('hidden');
+      toast(`Session récupérée${r.name ? ' — re-bonjour ' + r.name : ''} ✅`);
+      poll();
+    } catch (e) { toast(e.message, true); }
   };
   $('#obNeed').onclick = () => { $('#onboarding').classList.add('hidden'); openEmit('besoin'); };
   $('#obHelp').onclick = () => { $('#onboarding').classList.add('hidden'); $('#btnHelp').click(); };
