@@ -621,6 +621,16 @@ app.post('/api/pings/:id/close', limited('act', 120), async (req, res) => {
   }
   await q("UPDATE pings SET status='closed', closed_at=NOW() WHERE id=?", [p.id]);
   if (p.kind === 'besoin') await q("UPDATE stats SET v=v+1 WHERE k='resolved'");
+  // prévenir tous les engagés : un dépanneur en route vers un SOS résolu doit
+  // le savoir immédiatement — le contre-message vaut autant que l'annonce
+  const engaged = await q('SELECT helper_hash FROM arrivals WHERE ping_id=?', [p.id]);
+  for (const a of engaged) {
+    if (a.helper_hash === req.hash) continue;
+    notify(a.helper_hash, p.type === 'refuge'
+      ? { title: '🏠 Refuge clôturé', body: `« ${p.title} » n'est plus disponible. D'autres refuges sont sur la carte.`, url: '/' }
+      : { title: '✅ SOS clôturé — merci !', body: `« ${p.title} » est résolu ou n'est plus d'actualité : plus besoin de venir.`, url: '/' }
+    ).catch(() => {});
+  }
   res.json({ ok: true });
 });
 
